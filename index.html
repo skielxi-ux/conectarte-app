@@ -2005,10 +2005,10 @@ function sincronizarPostulacionesArtista(){
         notificacionesArtista.unshift({id:uid('n'), tipo:'revision', mensaje:`${c.institucion} está revisando tu postulación a "${c.titulo}" — ya está habilitada para evaluación del jurado.`, fecha:todayISO(), leida:false});
         huboNovedades = true;
       } else if(p.estado==='Aceptada'){
-        notificacionesArtista.unshift({id:uid('n'), tipo:'aceptada', mensaje:`¡Buenas noticias! ${c.institucion} aceptó tu postulación a "${c.titulo}".`, fecha:todayISO(), leida:false});
+        notificacionesArtista.unshift({id:uid('n'), tipo:'aceptada', mensaje:`¡Felicitaciones! ${c.institucion} aceptó tu postulación a "${c.titulo}". Se van a contactar con vos para coordinar los próximos pasos.`, fecha:todayISO(), leida:false});
         huboNovedades = true;
       } else if(p.estado==='Rechazada'){
-        notificacionesArtista.unshift({id:uid('n'), tipo:'rechazada', mensaje:`${c.institucion} no avanzó con tu postulación a "${c.titulo}" esta vez.`, fecha:todayISO(), leida:false});
+        notificacionesArtista.unshift({id:uid('n'), tipo:'rechazada', mensaje:`En esta ocasión, ${c.institucion} no seleccionó tu obra para "${c.titulo}". No te desanimes — seguí postulándote, cada convocatoria es una nueva oportunidad.`, fecha:todayISO(), leida:false});
         huboNovedades = true;
       }
     }
@@ -3537,6 +3537,7 @@ function enviarPostulacion(convId){
    ===================================================================== */
 function renderMisPostulaciones(){
   sincronizarPostulacionesArtista();
+  const hayDemo = misPostulaciones.some(p=>p.convId===undefined);
   document.getElementById('artista-view-postulaciones').innerHTML = `
     <div class="main-head">
       <div><h1>Mis postulaciones</h1><p class="sub">${misPostulaciones.length} postulaciones enviadas</p></div>
@@ -3565,7 +3566,7 @@ function renderMisPostulaciones(){
           `).join('') : `<tr><td colspan="6" class="empty-row">Todavía no te postulaste a ninguna convocatoria</td></tr>`}
         </tbody>
       </table>
-      <p class="text-dim" style="font-size:11.5px; margin-top:12px;"><i class="fa-solid fa-circle-info"></i> En las postulaciones reales, el estado lo definen los jurados y el museo desde Curaduría y jurado. Los íconos de simulación solo están disponibles en postulaciones de ejemplo.</p>
+      ${hayDemo ? `<p class="text-dim" style="font-size:11.5px; margin-top:12px;"><i class="fa-solid fa-circle-info"></i> En las postulaciones reales, el estado lo definen los jurados y el museo desde Curaduría y jurado. Los íconos de simulación solo están disponibles en postulaciones de ejemplo.</p>` : ''}
     </div>
   `;
 }
@@ -3575,8 +3576,8 @@ function simularRespuestaMuseo(postId, resultado){
   if(!p) return;
   const map = {
     revision: {estado:'En revisión', tipo:'revision', mensaje:`${p.institucion} pasó tu postulación a "${p.convocatoria}" a revisión.`},
-    aceptada: {estado:'Aceptada', tipo:'aceptada', mensaje:`¡Buenas noticias! ${p.institucion} aceptó tu postulación a "${p.convocatoria}".`},
-    rechazada: {estado:'Rechazada', tipo:'rechazada', mensaje:`${p.institucion} no avanzó con tu postulación a "${p.convocatoria}" esta vez.`}
+    aceptada: {estado:'Aceptada', tipo:'aceptada', mensaje:`¡Felicitaciones! ${p.institucion} aceptó tu postulación a "${p.convocatoria}". Se van a contactar con vos para coordinar los próximos pasos.`},
+    rechazada: {estado:'Rechazada', tipo:'rechazada', mensaje:`En esta ocasión, ${p.institucion} no seleccionó tu obra para "${p.convocatoria}". No te desanimes — seguí postulándote, cada convocatoria es una nueva oportunidad.`}
   };
   const info = map[resultado];
   if(!info) return;
