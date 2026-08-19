@@ -1036,6 +1036,7 @@ function mostrarPanel(role){
     if(agnameA) agnameA.textContent = nombreArtista;
     const avatarA = document.getElementById('sidebar-avatar-artista');
     if(avatarA) avatarA.src = avatarUrl(nombreArtista);
+    sincronizarPostulacionesArtista();
     showView('artista','dashboard');
     if(pendingPostularConvId){
       const convId = pendingPostularConvId;
@@ -1637,7 +1638,7 @@ function verObraPostulada(convId, idx){
   const fichaObraHtml = p.obra ? `
     <div class="flex gap-4 mb-5 pb-5 border-b border-gray-100">
       <div class="w-20 h-20 rounded-lg overflow-hidden flex-shrink-0 border border-gray-200 bg-gray-50">
-        ${p.obra.fotoUrl ? `<img src="${p.obra.fotoUrl}" alt="${escapeHtml(p.obra.titulo)}" style="width:100%;height:100%;object-fit:cover;">` : `<div class="w-full h-full flex items-center justify-center text-gray-300"><i class="fa-solid fa-image"></i></div>`}
+        ${p.obra.fotoUrl ? `<img src="${p.obra.fotoUrl}" alt="${escapeHtml(p.obra.titulo)}" style="width:100%;height:100%;object-fit:cover;cursor:pointer;" onclick="verImagenGrande('${p.obra.fotoUrl}','${escJs(p.obra.titulo)}')">` : `<div class="w-full h-full flex items-center justify-center text-gray-300"><i class="fa-solid fa-image"></i></div>`}
       </div>
       <div>
         <p class="font-black text-gray-900 text-[15px] leading-tight">${escapeHtml(p.obra.titulo)}</p>
@@ -1687,7 +1688,7 @@ function verFichaPostulante(convId, idx){
   const fichaObraHtml = p.obra ? `
     <div class="flex gap-4 mb-5 pb-5 border-b border-gray-100">
       <div class="w-20 h-20 rounded-lg overflow-hidden flex-shrink-0 border border-gray-200 bg-gray-50">
-        ${p.obra.fotoUrl ? `<img src="${p.obra.fotoUrl}" alt="${escapeHtml(p.obra.titulo)}" style="width:100%;height:100%;object-fit:cover;">` : `<div class="w-full h-full flex items-center justify-center text-gray-300"><i class="fa-solid fa-image"></i></div>`}
+        ${p.obra.fotoUrl ? `<img src="${p.obra.fotoUrl}" alt="${escapeHtml(p.obra.titulo)}" style="width:100%;height:100%;object-fit:cover;cursor:pointer;" onclick="verImagenGrande('${p.obra.fotoUrl}','${escJs(p.obra.titulo)}')">` : `<div class="w-full h-full flex items-center justify-center text-gray-300"><i class="fa-solid fa-image"></i></div>`}
       </div>
       <div>
         <p class="font-black text-gray-900 text-[15px] leading-tight">${escapeHtml(p.obra.titulo)}</p>
@@ -1986,32 +1987,43 @@ function renderCuraduriaTabla(){
   `;
 }
 
+// El museo no puede escribir directamente en los datos privados del artista
+// (cada cuenta es privada). Por eso, del lado del artista, comparamos el estado
+// REAL y compartido de cada postulación (en convocatorias) contra el último
+// estado que vimos, y generamos notificaciones nosotros mismos cuando cambió.
+function sincronizarPostulacionesArtista(){
+  let huboNovedades = false;
+  misPostulaciones.forEach(mp=>{
+    if(mp.convId===undefined || mp.postIdx===undefined) return; // postulaciones de ejemplo, sin vínculo real
+    const c = convocatorias.find(x=>x.id===mp.convId);
+    const p = c && c.postulantes ? c.postulantes[mp.postIdx] : null;
+    if(!c || !p) return;
+    if(p.estado !== mp.estado){
+      const anterior = mp.estado;
+      mp.estado = p.estado;
+      if(p.estado==='Revisado' && anterior==='Nuevo'){
+        notificacionesArtista.unshift({id:uid('n'), tipo:'revision', mensaje:`${c.institucion} está revisando tu postulación a "${c.titulo}" — ya está habilitada para evaluación del jurado.`, fecha:todayISO(), leida:false});
+        huboNovedades = true;
+      } else if(p.estado==='Aceptada'){
+        notificacionesArtista.unshift({id:uid('n'), tipo:'aceptada', mensaje:`¡Buenas noticias! ${c.institucion} aceptó tu postulación a "${c.titulo}".`, fecha:todayISO(), leida:false});
+        huboNovedades = true;
+      } else if(p.estado==='Rechazada'){
+        notificacionesArtista.unshift({id:uid('n'), tipo:'rechazada', mensaje:`${c.institucion} no avanzó con tu postulación a "${c.titulo}" esta vez.`, fecha:todayISO(), leida:false});
+        huboNovedades = true;
+      }
+    }
+  });
+  if(huboNovedades){ updateArtistaBadges(); guardarEstado(); }
+}
+
 function decidirPostulante(convId, idx, decision){
   const c = convocatorias.find(x=>x.id===convId);
   const p = c ? c.postulantes[idx] : null;
   if(!c || !p) return;
 
-  const nuevoEstado = decision==='aceptar' ? 'Aceptada' : 'Rechazada';
-  p.estado = nuevoEstado;
+  p.estado = decision==='aceptar' ? 'Aceptada' : 'Rechazada';
 
-  // reflejar la decisión en la vista del artista si esta postulación tiene un registro ahí
-  const mp = misPostulaciones.find(x=>x.convId===convId && x.postIdx===idx);
-  if(mp) mp.estado = nuevoEstado;
-
-  if(p.nombre===artistaPerfil.nombre){
-    const tipo = decision==='aceptar' ? 'aceptada' : 'rechazada';
-    const mensaje = decision==='aceptar'
-      ? `¡Buenas noticias! ${c.institucion} aceptó tu postulación a "${c.titulo}".`
-      : `${c.institucion} no avanzó con tu postulación a "${c.titulo}" esta vez.`;
-    notificacionesArtista.unshift({id:uid('n'), tipo, mensaje, fecha:todayISO(), leida:false});
-
-    const conv = getOrCreateConversacion(c.institucion, c.titulo, p.nombre);
-    conv.mensajes.push({id:uid('msg'), autor:'museo', texto:mensaje, fecha:new Date().toISOString(), leidoMuseo:true, leidoArtista:false});
-
-    updateArtistaBadges();
-  }
-
-  toast(decision==='aceptar' ? 'Postulante aceptado — se notificó al artista' : 'Postulante rechazado — se notificó al artista');
+  toast(decision==='aceptar' ? 'Postulante aceptado' : 'Postulante rechazado');
   renderCuraduriaTabla();
   updateMuseoBadges();
   guardarEstado();
@@ -3100,6 +3112,7 @@ function doLoginJurado(){
    ARTISTA — DASHBOARD
    ===================================================================== */
 function renderArtistaDashboard(){
+  sincronizarPostulacionesArtista();
   const disponibles = convocatorias.filter(c=>c.estado==='Activa');
   const aceptadas = misPostulaciones.filter(p=>p.estado==='Aceptada').length;
   const tasaAceptacion = misPostulaciones.length ? Math.round((aceptadas / misPostulaciones.length) * 100) : null;
@@ -3523,6 +3536,7 @@ function enviarPostulacion(convId){
    ARTISTA — MIS POSTULACIONES
    ===================================================================== */
 function renderMisPostulaciones(){
+  sincronizarPostulacionesArtista();
   document.getElementById('artista-view-postulaciones').innerHTML = `
     <div class="main-head">
       <div><h1>Mis postulaciones</h1><p class="sub">${misPostulaciones.length} postulaciones enviadas</p></div>
@@ -3999,6 +4013,7 @@ const NOTIF_CONFIG = {
 };
 
 function renderNotificaciones(){
+  sincronizarPostulacionesArtista();
   document.getElementById('artista-view-notificaciones').innerHTML = `
     <div class="main-head">
       <div><h1>Notificaciones</h1><p class="sub">Novedades sobre tus postulaciones a convocatorias</p></div>
