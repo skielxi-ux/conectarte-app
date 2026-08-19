@@ -3803,17 +3803,18 @@ function openObraModal(id){
   openModal(tw_modalShell('Catálogo de obras', o?'Editar obra':'Nueva obra', 'La ficha técnica completa queda disponible para los museos que revisen tu postulación.', body, true));
 }
 
-function onObraFotoChange(event){
+async function onObraFotoChange(event){
   const file = event.target.files[0];
   if(!file) return;
   if(!file.type.startsWith('image/')){ toast('Elegí un archivo de imagen','err'); return; }
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    obraFotoTemp = e.target.result;
+  try{
+    obraFotoTemp = await comprimirImagen(file, 900, 0.72);
     const wrap = document.getElementById('ob-foto-preview-wrap');
     if(wrap) wrap.innerHTML = `<img src="${obraFotoTemp}" style="width:100%;height:100%;object-fit:cover;">`;
-  };
-  reader.readAsDataURL(file);
+  }catch(e){
+    console.error('Error procesando la foto de la obra:', e);
+    toast('No se pudo procesar la imagen','err');
+  }
 }
 
 function guardarObra(id){
