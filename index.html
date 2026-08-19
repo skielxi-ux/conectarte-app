@@ -3251,7 +3251,9 @@ function renderDisponiblesTabla(){
               <td class="text-dim">${escapeHtml(c.disciplina)}</td>
               <td class="text-dim">${escapeHtml(c.modalidad)}</td>
               <td class="${daysUntil(c.cierre)<=7?'text-red':''}">${fmtDate(c.cierre)}</td>
-              <td><button class="btn btn-sm btn-solid" onclick="openPostularModal('${c.id}')"><i class="fa-solid fa-paper-plane"></i> Postularme</button></td>
+              <td>${misPostulaciones.some(p=>p.convId===c.id)
+                ? `<span class="pill pill-sage" title="Ya te postulaste a esta convocatoria"><i class="fa-solid fa-check"></i> Ya te postulaste</span>`
+                : `<button class="btn btn-sm btn-solid" onclick="openPostularModal('${c.id}')"><i class="fa-solid fa-paper-plane"></i> Postularme</button>`}</td>
             </tr>
           `).join('') : `<tr><td colspan="6" class="empty-row">Ninguna convocatoria coincide con los filtros aplicados</td></tr>`}
         </tbody>
@@ -3279,6 +3281,11 @@ const DECLARACIONES_JURADAS = [
 function openPostularModal(convId){
   const c = convocatorias.find(x=>x.id===convId);
   if(!c) return;
+  const yaPostulado = misPostulaciones.some(p=>p.convId===convId);
+  if(yaPostulado){
+    toast('Ya te postulaste a esta convocatoria', 'err');
+    return;
+  }
   postArchivoDataUrl = null;
   postArchivoTipo = null;
   postArchivoNombre = null;
