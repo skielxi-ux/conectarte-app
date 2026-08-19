@@ -720,7 +720,7 @@ function plantillaPrivadaVacia(role, email){
 async function cargarEstadoPrivado(uid, role, email){
   try{
     const ref = db.collection('usuarios').doc(uid).collection('datos').doc('privado');
-    const snap = await ref.get();
+    const snap = await conReintentoDeAuth(() => ref.get());
     if(snap.exists){
       const data = snap.data();
       if(data.misPostulaciones) misPostulaciones = data.misPostulaciones;
@@ -969,11 +969,15 @@ async function submitAuth(role){
     let userCred;
     if(authModo === 'registro'){
       userCred = await auth.createUserWithEmailAndPassword(email, pass);
+      // Esperamos a que el token esté listo antes de escribir, para evitar
+      // que Firestore todavía no "sepa" que ya estamos autenticados.
+      await userCred.user.getIdToken();
       await db.collection('usuarios').doc(userCred.user.uid).set({
         email, rol: role, creado: new Date().toISOString()
       });
     } else {
       userCred = await auth.signInWithEmailAndPassword(email, pass);
+      await userCred.user.getIdToken();
     }
     await entrarConSesion(userCred.user, role);
   }catch(e){
@@ -982,12 +986,30 @@ async function submitAuth(role){
   }
 }
 
+// Reintenta una operación de Firestore si falla por 'permission-denied' justo
+// después de loguearse (el token puede tardar una fracción de segundo en propagarse).
+async function conReintentoDeAuth(fn, intentos){
+  intentos = intentos===undefined ? 3 : intentos;
+  for(let i=0; i<intentos; i++){
+    try{
+      return await fn();
+    }catch(e){
+      if(e.code === 'permission-denied' && i < intentos-1){
+        await new Promise(r => setTimeout(r, 500));
+        continue;
+      }
+      throw e;
+    }
+  }
+}
+
 async function entrarConSesion(user, rolPorDefecto){
   usuarioActualUid = user.uid;
   try{
-    const udoc = await db.collection('usuarios').doc(user.uid).get();
+    const udoc = await conReintentoDeAuth(() => db.collection('usuarios').doc(user.uid).get());
     usuarioActualRol = udoc.exists && udoc.data().rol ? udoc.data().rol : rolPorDefecto;
   }catch(e){
+    console.error('No se pudo leer el rol de la cuenta:', e);
     usuarioActualRol = rolPorDefecto;
   }
   await cargarEstadoPrivado(user.uid, usuarioActualRol, user.email);
