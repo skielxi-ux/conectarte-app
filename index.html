@@ -1048,9 +1048,14 @@ async function logout(){
 // A propósito NO restauramos la sesión automáticamente: cada vez que se abre
 // el sitio o se toca "Soy museo" / "Soy artista", pedimos login explícito.
 // Si Firebase todavía tenía una sesión activa de una visita anterior, la cerramos
-// en silencio para que no interfiera.
+// en silencio — pero SOLO en el primer chequeo al cargar la página. Los cambios
+// de sesión posteriores (login/logout manual) los maneja directamente submitAuth()/logout(),
+// así que este listener no debe volver a intervenir después del primer chequeo.
+let primerChequeoAuthHecho = false;
 auth.onAuthStateChanged(async (user)=>{
-  if(user && usuarioActualUid !== user.uid){
+  if(primerChequeoAuthHecho) return;
+  primerChequeoAuthHecho = true;
+  if(user){
     try{ await auth.signOut(); }catch(e){}
   }
 });
