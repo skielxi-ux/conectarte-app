@@ -710,7 +710,7 @@ function plantillaPrivadaVacia(role, email){
     equipoMuseo: role==='museo' ? [
       {id:uid('m'), nombre:'Vos (titular de la cuenta)', email: email||'', rol:'Dirección', permisos:[...ROLE_DEFAULTS['Dirección']], titular:true}
     ] : [],
-    artistaPerfil: { nombre:'', disciplinaPrincipal:'', ciudad:'', bio:'', trayectoria:'', statement:'', email: email||'', instagram:'', sitio:'', fotoUrl:null, dni:'', fechaNacimiento:'', nacionalidad:'Argentina', provincia:'', localidad:'', celular:'' },
+    artistaPerfil: { nombre:'', disciplinaPrincipal:'', ciudad:'', bio:'', trayectoria:'', statement:'', email: email||'', instagram:'', sitio:'', fotoUrl:null, portada:null, dni:'', fechaNacimiento:'', nacionalidad:'Argentina', provincia:'', localidad:'', celular:'' },
     obrasArtista: []
   };
   return base;
@@ -3710,8 +3710,14 @@ function renderPerfilArtistaPreview(){
   document.getElementById('ap-preview').innerHTML = `
     <div class="section-title">Vista previa</div>
     <div style="border:1px solid var(--line); border-radius:var(--radius); overflow:hidden;">
-      <div style="height:80px; background:linear-gradient(135deg,#1C2B36,#3F5A66); position:relative;">
-        <div onclick="document.getElementById('ap-foto-input').click()" title="Cambiar foto de perfil"
+      <div style="height:80px; ${a.portada ? `background:url('${a.portada}') center/cover;` : 'background:linear-gradient(135deg,#1C2B36,#3F5A66);'} position:relative; cursor:pointer;"
+           onclick="document.getElementById('ap-portada-input').click()" title="Cambiar portada">
+        <div style="position:absolute; inset:0; background:rgba(0,0,0,0.25); display:flex; align-items:center; justify-content:center; opacity:0; transition:opacity .15s ease;"
+             onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0">
+          <span style="color:#fff; font-size:11.5px; font-weight:700;"><i class="fa-solid fa-camera"></i> Cambiar portada</span>
+        </div>
+        <input type="file" id="ap-portada-input" accept="image/*" class="hidden" onchange="subirPortadaArtista(this)" onclick="event.stopPropagation()">
+        <div onclick="event.stopPropagation(); document.getElementById('ap-foto-input').click()" title="Cambiar foto de perfil"
              style="position:absolute; left:18px; bottom:-28px; width:56px; height:56px; border-radius:50%; cursor:pointer;">
           <img src="${avatarSrcFor(a.nombre, a.fotoUrl)}" alt="Avatar" style="width:56px; height:56px; border-radius:50%; border:3px solid #fff; background:#F1EFE9; object-fit:cover; display:block;">
           <div style="position:absolute; inset:0; border-radius:50%; background:rgba(0,0,0,0.35); display:flex; align-items:center; justify-content:center; opacity:0; transition:opacity .15s ease;"
@@ -3719,7 +3725,7 @@ function renderPerfilArtistaPreview(){
             <i class="fa-solid fa-camera" style="color:#fff; font-size:13px;"></i>
           </div>
         </div>
-        <input type="file" id="ap-foto-input" accept="image/*" class="hidden" onchange="onFotoPerfilChange(event)">
+        <input type="file" id="ap-foto-input" accept="image/*" class="hidden" onchange="onFotoPerfilChange(event)" onclick="event.stopPropagation()">
       </div>
       <div style="padding:18px 18px 18px; padding-top:36px;">
         <h3 style="font-size:18px; font-weight:900; margin:0 0 4px;">${escapeHtml(a.nombre)}</h3>
@@ -3736,19 +3742,36 @@ function renderPerfilArtistaPreview(){
   `;
 }
 
-function onFotoPerfilChange(event){
+async function onFotoPerfilChange(event){
   const file = event.target.files[0];
   if(!file) return;
   if(!file.type.startsWith('image/')){ toast('Elegí un archivo de imagen','err'); return; }
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    artistaPerfil.fotoUrl = e.target.result;
+  try{
+    artistaPerfil.fotoUrl = await comprimirImagen(file, 500, 0.75);
     renderPerfilArtistaPreview();
     const sidebarAvatar = document.getElementById('sidebar-avatar-artista');
     if(sidebarAvatar) sidebarAvatar.src = artistaPerfil.fotoUrl;
     toast('Foto de perfil actualizada');
-  };
-  reader.readAsDataURL(file);
+    guardarEstado();
+  }catch(e){
+    console.error('Error procesando la foto de perfil:', e);
+    toast('No se pudo procesar la imagen','err');
+  }
+}
+
+async function subirPortadaArtista(input){
+  const file = input.files[0];
+  if(!file) return;
+  if(!file.type.startsWith('image/')){ toast('Elegí un archivo de imagen','err'); return; }
+  try{
+    artistaPerfil.portada = await comprimirImagen(file, 1200, 0.72);
+    renderPerfilArtistaPreview();
+    toast('Portada actualizada');
+    guardarEstado();
+  }catch(e){
+    console.error('Error procesando la portada:', e);
+    toast('No se pudo procesar la imagen','err');
+  }
 }
 
 function guardarPerfilArtista(){
@@ -3898,7 +3921,7 @@ function verPortfolioPublico(){
     <html><head><title>${escapeHtml(a.nombre)} — conectARTE</title>
     <style>
       body{font-family:'Lato',Arial,sans-serif; margin:0; color:#1C2B36;}
-      .cover{height:200px; background:linear-gradient(135deg,#1C2B36,#3F5A66); position:relative;}
+      .cover{height:200px; background:${a.portada ? `url('${a.portada}') center/cover` : 'linear-gradient(135deg,#1C2B36,#3F5A66)'}; position:relative;}
       .avatar{width:96px; height:96px; border-radius:50%; border:4px solid #fff; position:absolute; left:40px; bottom:-48px; background:#F1EFE9;}
       .wrap{max-width:800px; margin:-60px auto 60px; background:#fff; border-radius:14px; box-shadow:0 20px 50px rgba(0,0,0,.12); padding:40px; padding-top:64px;}
       h1{font-size:30px; margin:0 0 6px;}
