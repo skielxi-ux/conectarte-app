@@ -562,7 +562,7 @@ button{font-family:inherit; cursor:pointer;}
       <div class="sidebar-foot">
         <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
           <img id="sidebar-avatar-artista" src="https://api.dicebear.com/7.x/lorelei/svg?seed=Lucas%20Reyes&backgroundType=gradientLinear" alt="Avatar" style="width:26px; height:26px; border-radius:50%; background:var(--ink-3); object-fit:cover;">
-          <span class="agname" style="margin-bottom:0;">Lucas Reyes</span>
+          <span class="agname" id="artista-agname" style="margin-bottom:0;">Lucas Reyes</span>
         </div>
         <button class="btn btn-sm" style="width:100%; justify-content:center;" onclick="logout()"><i class="fa-solid fa-arrow-right-from-bracket"></i> Cerrar sesión</button>
         <button onclick="resetearDemo()" style="width:100%; text-align:center; background:none; border:none; color:var(--paper-dim); font-size:11px; margin-top:8px; cursor:pointer; text-decoration:underline;">Reiniciar datos de la demo</button>
@@ -1031,6 +1031,11 @@ function mostrarPanel(role){
     showView('museo','dashboard');
   } else {
     document.getElementById('artista-app').classList.remove('hidden');
+    const agnameA = document.getElementById('artista-agname');
+    const nombreArtista = (artistaPerfil && artistaPerfil.nombre) ? artistaPerfil.nombre : 'Completá tu nombre';
+    if(agnameA) agnameA.textContent = nombreArtista;
+    const avatarA = document.getElementById('sidebar-avatar-artista');
+    if(avatarA) avatarA.src = avatarUrl(nombreArtista);
     showView('artista','dashboard');
     if(pendingPostularConvId){
       const convId = pendingPostularConvId;
@@ -3101,7 +3106,7 @@ function renderArtistaDashboard(){
 
   document.getElementById('artista-view-dashboard').innerHTML = `
     <div class="main-head">
-      <div><h1>Dashboard</h1><p class="sub">Resumen general · Lucas Reyes</p></div>
+      <div><h1>Dashboard</h1><p class="sub">Resumen general · ${escapeHtml(artistaPerfil.nombre || 'Completá tu nombre')}</p></div>
       <button class="btn btn-solid" onclick="showView('artista','disponibles')"><i class="fa-solid fa-bullhorn"></i> Ver convocatorias</button>
     </div>
     <div class="kpi-grid">
@@ -3742,6 +3747,10 @@ function guardarPerfilArtista(){
   artistaPerfil.localidad = document.getElementById('ap-localidad').value.trim();
   toast('Perfil actualizado');
   renderPerfilArtistaPreview();
+  const agnameA = document.getElementById('artista-agname');
+  if(agnameA) agnameA.textContent = artistaPerfil.nombre || 'Completá tu nombre';
+  const avatarA = document.getElementById('sidebar-avatar-artista');
+  if(avatarA) avatarA.src = avatarUrl(artistaPerfil.nombre || 'Completá tu nombre');
   guardarEstado();
 }
 
