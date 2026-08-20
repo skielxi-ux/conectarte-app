@@ -790,6 +790,11 @@ async function resetearDemo(){
   }catch(e){
     console.error('Error al reiniciar los datos:', e);
   }
+  // Evitamos que un autoguardado de último momento (disparado por la recarga)
+  // reescriba en Firebase los datos viejos que todavía están en memoria.
+  window.removeEventListener('beforeunload', guardarEstado);
+  if(autosaveIntervalId){ clearInterval(autosaveIntervalId); autosaveIntervalId = null; }
+  convocatorias = []; conversaciones = []; blogPosts = [];
   location.reload();
 }
 
