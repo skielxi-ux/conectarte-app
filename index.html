@@ -1335,10 +1335,24 @@ function renderConvTable(){
           <button class="btn btn-sm" onclick="openConvocatoriaModal('${c.id}')" title="Editar"><i class="fa-solid fa-pen"></i></button>
           ${c.estado!=='Cerrada' ? `<button class="btn btn-sm" onclick="toggleConvocatoria('${c.id}')" title="${c.estado==='Activa'?'Pausar':'Reanudar'}"><i class="fa-solid ${c.estado==='Activa'?'fa-pause':'fa-play'}"></i></button>` : ''}
           ${c.estado!=='Cerrada' ? `<button class="btn btn-sm btn-danger" onclick="cerrarConvocatoria('${c.id}')" title="Cerrar"><i class="fa-solid fa-xmark"></i></button>` : ''}
+          <button class="btn btn-sm btn-danger" onclick="eliminarConvocatoria('${c.id}')" title="Eliminar convocatoria"><i class="fa-solid fa-trash"></i></button>
         </div>
       </td>
     </tr>`;
   }).join('') : `<tr><td colspan="7" class="empty-row">Ninguna convocatoria coincide con los filtros aplicados</td></tr>`;
+}
+
+function eliminarConvocatoria(id){
+  const c = convocatorias.find(x=>x.id===id);
+  if(!c) return;
+  const aviso = c.postulantes.length
+    ? `"${c.titulo}" tiene ${c.postulantes.length} postulación(es) cargada(s). Si la eliminás, se pierden también esas postulaciones y no se puede deshacer. ¿Eliminar de todas formas?`
+    : `¿Eliminar la convocatoria "${c.titulo}"? No se puede deshacer.`;
+  if(!confirm(aviso)) return;
+  convocatorias = convocatorias.filter(x=>x.id!==id);
+  renderConvTable();
+  guardarEstado();
+  toast('Convocatoria eliminada');
 }
 
 function toggleConvocatoria(id){
@@ -1542,6 +1556,7 @@ function renderPostulantesGlobal(){
                   <button class="btn btn-sm" onclick="verObraPostulada('${p.convId}',${p.idx})"><i class="fa-solid fa-paperclip"></i> Ver obra</button>
                   <button class="btn btn-sm" style="color:#25D366; border-color:#25D366;" onclick="abrirWhatsappArtista('${escJs(p.nombre)}','${escJs(p.convocatoria)}')" title="Escribir por WhatsApp"><i class="fa-brands fa-whatsapp"></i></button>
                   ${p.estado==='Nuevo' ? `<button class="btn btn-sm" onclick="marcarRevisado('${p.convId}',${p.idx})" title="Marcar revisado (habilita esta postulación para Curaduría y jurado)"><i class="fa-solid fa-check"></i></button>` : ''}
+                  <button class="btn btn-sm btn-danger" onclick="eliminarPostulante('${p.convId}',${p.idx})" title="Eliminar postulación"><i class="fa-solid fa-trash"></i></button>
                 </div>
               </td>
             </tr>`;
@@ -1551,6 +1566,31 @@ function renderPostulantesGlobal(){
       <p class="text-dim" style="font-size:11.5px; margin-top:12px;"><i class="fa-solid fa-circle-info"></i> Marcar como "revisado" habilita a esa postulación para que los jurados puedan evaluarla en Curaduría y jurado. Los postulantes "Nuevos" todavía no aparecen ahí.</p>
     </div>
   `;
+}
+
+function eliminarPostulante(convId, idx){
+  const c = convocatorias.find(x=>x.id===convId);
+  if(!c || !c.postulantes[idx]) return;
+  const nombre = c.postulantes[idx].nombre;
+  if(!confirm(`¿Eliminar la postulación de ${nombre} a "${c.titulo}"? No se puede deshacer.`)) return;
+  c.postulantes.splice(idx, 1);
+  renderPostulantesGlobal();
+  updateMuseoBadges();
+  guardarEstado();
+  toast('Postulación eliminada');
+}
+
+function eliminarPostulanteDesdeCatalogo(convId, idx){
+  const c = convocatorias.find(x=>x.id===convId);
+  if(!c || !c.postulantes[idx]) return;
+  const nombre = c.postulantes[idx].nombre;
+  if(!confirm(`¿Eliminar la postulación de ${nombre} a "${c.titulo}"? No se puede deshacer.`)) return;
+  c.postulantes.splice(idx, 1);
+  catalogState.selected = new Set();
+  renderCatalogTabla();
+  updateMuseoBadges();
+  guardarEstado();
+  toast('Postulación eliminada');
 }
 
 function marcarRevisado(convId, idx){
@@ -2234,7 +2274,10 @@ function renderCatalogTabla(){
         <td><strong>${escapeHtml(p.nombre)}</strong></td>
         <td class="text-dim">${escapeHtml(c.disciplina)} · ${escapeHtml(c.tecnica||'—')}</td>
         <td class="text-dim">${escapeHtml(c.dimensiones||'—')}</td>
-        <td><button class="btn btn-sm" onclick="verCartela('${c.id}',${idx})"><i class="fa-solid fa-tag"></i> Ver cartela</button></td>
+        <td class="row-actions">
+          <button class="btn btn-sm" onclick="verCartela('${c.id}',${idx})"><i class="fa-solid fa-tag"></i> Ver cartela</button>
+          <button class="btn btn-sm btn-danger" onclick="eliminarPostulanteDesdeCatalogo('${c.id}',${idx})" title="Eliminar esta postulación"><i class="fa-solid fa-trash"></i></button>
+        </td>
       </tr>`;
   }).join('');
 
