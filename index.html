@@ -215,7 +215,6 @@ button{font-family:inherit; cursor:pointer;}
             <button onclick="closeMenuCuenta(); openLoginModalJurado()" class="w-full text-left px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-2.5 border-t border-gray-100"><i class="fa-solid fa-gavel text-gray-400 w-4"></i> Soy jurado</button>
           </div>
         </div>
-        <button class="nav-cta" onclick="openLoginModal('museo')">Ingresar</button>
       </div>
     </div>
   </header>
@@ -309,83 +308,10 @@ button{font-family:inherit; cursor:pointer;}
 
     <div class="hero-content">
       <div class="swiper testi-swiper">
-        <div class="swiper-wrapper" style="padding-bottom:8px;">
+        <div class="swiper-wrapper" id="testimonios-wrapper" style="padding-bottom:8px;">
           <div class="swiper-slide" style="height:auto;">
-            <div class="h-full flex flex-col justify-between rounded-2xl border border-gray-100 shadow-sm p-8 bg-white">
-              <div>
-                <div class="flex gap-0.5 text-[#B5502E] mb-4"><i class="fa-solid fa-star text-xs"></i><i class="fa-solid fa-star text-xs"></i><i class="fa-solid fa-star text-xs"></i><i class="fa-solid fa-star text-xs"></i><i class="fa-solid fa-star text-xs"></i></div>
-                <p class="text-gray-700 text-[15px] leading-relaxed">"Publicamos una convocatoria de arte textil y en dos semanas teníamos treinta postulaciones de calidad de todo el país. Antes eso nos llevaba meses de difusión boca a boca."</p>
-              </div>
-              <div class="flex items-center gap-3 mt-8 pt-6 border-t border-gray-100">
-                <img src="https://api.dicebear.com/7.x/lorelei/svg?seed=Julieta%20Fernandez&backgroundType=gradientLinear" class="w-11 h-11 rounded-full bg-gray-100">
-                <div><strong class="block text-sm text-gray-900">Julieta Fernández</strong><span class="text-xs text-gray-400">Directora, Fundación Cultural del Sur</span></div>
-                <i class="fa-solid fa-landmark ml-auto text-gray-300 text-lg"></i>
-              </div>
-            </div>
-          </div>
-          <div class="swiper-slide" style="height:auto;">
-            <div class="h-full flex flex-col justify-between rounded-2xl border border-gray-100 shadow-sm p-8 bg-white">
-              <div>
-                <div class="flex gap-0.5 text-[#B5502E] mb-4"><i class="fa-solid fa-star text-xs"></i><i class="fa-solid fa-star text-xs"></i><i class="fa-solid fa-star text-xs"></i><i class="fa-solid fa-star text-xs"></i><i class="fa-solid fa-star text-xs"></i></div>
-                <p class="text-gray-700 text-[15px] leading-relaxed">"Como jurado, trabajar con evaluación a ciegas y rúbricas compartidas nos ayudó a elegir con criterios claros, no por quién conocíamos. Se nota en la calidad de las muestras."</p>
-              </div>
-              <div class="flex items-center gap-3 mt-8 pt-6 border-t border-gray-100">
-                <img src="https://api.dicebear.com/7.x/lorelei/svg?seed=Marina%20Coria&backgroundType=gradientLinear" class="w-11 h-11 rounded-full bg-gray-100">
-                <div><strong class="block text-sm text-gray-900">Marina Coria</strong><span class="text-xs text-gray-400">Jurado, Museo de Arte Contemporáneo</span></div>
-                <i class="fa-solid fa-scale-balanced ml-auto text-gray-300 text-lg"></i>
-              </div>
-            </div>
-          </div>
-          <div class="swiper-slide" style="height:auto;">
-            <div class="h-full flex flex-col justify-between rounded-2xl border border-gray-100 shadow-sm p-8 bg-white">
-              <div>
-                <div class="flex gap-0.5 text-[#B5502E] mb-4"><i class="fa-solid fa-star text-xs"></i><i class="fa-solid fa-star text-xs"></i><i class="fa-solid fa-star text-xs"></i><i class="fa-solid fa-star text-xs"></i><i class="fa-solid fa-star text-xs"></i></div>
-                <p class="text-gray-700 text-[15px] leading-relaxed">"Mi obra llegó a instituciones que jamás hubiera contactado por mi cuenta. Cargué mi catálogo una sola vez y ahora lo reutilizo en cada postulación — me ahorra horas."</p>
-              </div>
-              <div class="flex items-center gap-3 mt-8 pt-6 border-t border-gray-100">
-                <img src="https://api.dicebear.com/7.x/lorelei/svg?seed=Lucas%20Reyes&backgroundType=gradientLinear" class="w-11 h-11 rounded-full bg-gray-100">
-                <div><strong class="block text-sm text-gray-900">Lucas Reyes</strong><span class="text-xs text-gray-400">Artista, pintura y técnica mixta</span></div>
-                <i class="fa-solid fa-palette ml-auto text-gray-300 text-lg"></i>
-              </div>
-            </div>
-          </div>
-          <div class="swiper-slide" style="height:auto;">
-            <div class="h-full flex flex-col justify-between rounded-2xl border border-gray-100 shadow-sm p-8 bg-white">
-              <div>
-                <div class="flex gap-0.5 text-[#B5502E] mb-4"><i class="fa-solid fa-star text-xs"></i><i class="fa-solid fa-star text-xs"></i><i class="fa-solid fa-star text-xs"></i><i class="fa-solid fa-star text-xs"></i><i class="fa-solid fa-star text-xs"></i></div>
-                <p class="text-gray-700 text-[15px] leading-relaxed">"El seguimiento del estado de mi postulación y las notificaciones me sacan la incertidumbre de encima — sé en todo momento si están revisando mi obra o si ya hay una decisión."</p>
-              </div>
-              <div class="flex items-center gap-3 mt-8 pt-6 border-t border-gray-100">
-                <img src="https://api.dicebear.com/7.x/lorelei/svg?seed=Florencia%20Sosa&backgroundType=gradientLinear" class="w-11 h-11 rounded-full bg-gray-100">
-                <div><strong class="block text-sm text-gray-900">Florencia Sosa</strong><span class="text-xs text-gray-400">Fotógrafa documental</span></div>
-                <i class="fa-solid fa-camera-retro ml-auto text-gray-300 text-lg"></i>
-              </div>
-            </div>
-          </div>
-          <div class="swiper-slide" style="height:auto;">
-            <div class="h-full flex flex-col justify-between rounded-2xl border border-gray-100 shadow-sm p-8 bg-white">
-              <div>
-                <div class="flex gap-0.5 text-[#B5502E] mb-4"><i class="fa-solid fa-star text-xs"></i><i class="fa-solid fa-star text-xs"></i><i class="fa-solid fa-star text-xs"></i><i class="fa-solid fa-star text-xs"></i><i class="fa-solid fa-star text-xs"></i></div>
-                <p class="text-gray-700 text-[15px] leading-relaxed">"Como institución privada, nos costaba llegar a artistas fuera de nuestro círculo. Acá el catálogo de perfiles curados nos amplió muchísimo el alcance."</p>
-              </div>
-              <div class="flex items-center gap-3 mt-8 pt-6 border-t border-gray-100">
-                <img src="https://api.dicebear.com/7.x/lorelei/svg?seed=Ivan%20Torres&backgroundType=gradientLinear" class="w-11 h-11 rounded-full bg-gray-100">
-                <div><strong class="block text-sm text-gray-900">Iván Torres</strong><span class="text-xs text-gray-400">Prensa, Centro de Arte Moderno</span></div>
-                <i class="fa-solid fa-landmark ml-auto text-gray-300 text-lg"></i>
-              </div>
-            </div>
-          </div>
-          <div class="swiper-slide" style="height:auto;">
-            <div class="h-full flex flex-col justify-between rounded-2xl border border-gray-100 shadow-sm p-8 bg-white">
-              <div>
-                <div class="flex gap-0.5 text-[#B5502E] mb-4"><i class="fa-solid fa-star text-xs"></i><i class="fa-solid fa-star text-xs"></i><i class="fa-solid fa-star text-xs"></i><i class="fa-solid fa-star text-xs"></i><i class="fa-solid fa-star text-xs"></i></div>
-                <p class="text-gray-700 text-[15px] leading-relaxed">"Valoro que puedan filtrar por técnica y materialidad. Los museos que me contactan ya conocen mi trabajo antes de escribirme."</p>
-              </div>
-              <div class="flex items-center gap-3 mt-8 pt-6 border-t border-gray-100">
-                <img src="https://api.dicebear.com/7.x/lorelei/svg?seed=Agustina%20Nunez&backgroundType=gradientLinear" class="w-11 h-11 rounded-full bg-gray-100">
-                <div><strong class="block text-sm text-gray-900">Agustina Núñez</strong><span class="text-xs text-gray-400">Escultora</span></div>
-                <i class="fa-solid fa-palette ml-auto text-gray-300 text-lg"></i>
-              </div>
+            <div class="h-full flex items-center justify-center rounded-2xl border border-gray-100 shadow-sm p-8 bg-white">
+              <p class="text-sm text-gray-400">Cargando testimonios…</p>
             </div>
           </div>
         </div>
@@ -512,6 +438,7 @@ button{font-family:inherit; cursor:pointer;}
         <div class="nav-group-label">Institución</div>
         <div class="nav-item" data-app="museo" data-view="perfil"><i class="fa-solid fa-store"></i> Perfil público</div>
         <div class="nav-item" data-app="museo" data-view="equipo"><i class="fa-solid fa-user-shield"></i> Equipo y permisos</div>
+        <div class="nav-item" data-app="museo" data-view="valorar"><i class="fa-solid fa-star"></i> Valorar conectARTE</div>
       </div>
       <div class="sidebar-foot">
         <span class="agname" id="museo-agname">Museo de Arte Contemporáneo</span>
@@ -531,6 +458,7 @@ button{font-family:inherit; cursor:pointer;}
       <div id="museo-view-historial" class="hidden"></div>
       <div id="museo-view-perfil" class="hidden"></div>
       <div id="museo-view-equipo" class="hidden"></div>
+      <div id="museo-view-valorar" class="hidden"></div>
     </main>
   </div>
 </div>
@@ -557,6 +485,7 @@ button{font-family:inherit; cursor:pointer;}
       <div class="nav-group">
         <div class="nav-group-label">Red</div>
         <div class="nav-item" data-app="artista" data-view="instituciones"><i class="fa-solid fa-building-columns"></i> Instituciones adheridas</div>
+        <div class="nav-item" data-app="artista" data-view="valorar"><i class="fa-solid fa-star"></i> Valorar conectARTE</div>
       </div>
       <div class="nav-group">
         <div class="nav-group-label">Perfil</div>
@@ -580,6 +509,7 @@ button{font-family:inherit; cursor:pointer;}
       <div id="artista-view-misobras" class="hidden"></div>
       <div id="artista-view-notificaciones" class="hidden"></div>
       <div id="artista-view-instituciones" class="hidden"></div>
+      <div id="artista-view-valorar" class="hidden"></div>
     </main>
   </div>
 </div>
@@ -1215,8 +1145,8 @@ auth.onAuthStateChanged(async (user)=>{
 });
 
 /* navegación de cada panel */
-const MUSEO_VIEWS = ['dashboard','convocatorias','postulantes','notificaciones','curaduria','catalogos','recorrido','blog','historial','perfil','equipo'];
-const ARTISTA_VIEWS = ['dashboard','disponibles','postulaciones','portfolio','misobras','notificaciones','instituciones'];
+const MUSEO_VIEWS = ['dashboard','convocatorias','postulantes','notificaciones','curaduria','catalogos','recorrido','blog','historial','perfil','equipo','valorar'];
+const ARTISTA_VIEWS = ['dashboard','disponibles','postulaciones','portfolio','misobras','notificaciones','instituciones','valorar'];
 
 function showView(app, name){
   const views = app==='museo' ? MUSEO_VIEWS : ARTISTA_VIEWS;
@@ -1238,6 +1168,7 @@ function showView(app, name){
     if(name==='historial') renderHistorial();
     if(name==='perfil') renderPerfilPublico();
     if(name==='equipo') renderEquipo();
+    if(name==='valorar') renderValorarConectarte('museo');
     updateMuseoBadges();
     aplicarPermisos();
   } else {
@@ -1248,6 +1179,7 @@ function showView(app, name){
     if(name==='misobras') renderMisObras();
     if(name==='notificaciones') renderNotificaciones();
     if(name==='instituciones') renderInstituciones();
+    if(name==='valorar') renderValorarConectarte('artista');
     updateArtistaBadges();
   }
 }
@@ -5383,16 +5315,130 @@ function cfSwitchTab(tipo){
 }
 cfSwitchTab('museos');
 
-/* ---------- Testimonios: carrusel Swiper ---------- */
-if(window.Swiper){
-  new Swiper('.testi-swiper', {
-    slidesPerView: 1,
-    spaceBetween: 20,
-    loop: true,
-    pagination: { el: '.testi-swiper .swiper-pagination', clickable: true },
-    navigation: { nextEl: '.testi-next', prevEl: '.testi-prev' },
-    breakpoints: { 768: { slidesPerView: 2 }, 1100: { slidesPerView: 3 } }
+/* ---------- Testimonios: datos reales + carrusel Swiper ---------- */
+let testimoniosSwiperInstance = null;
+const ICONO_ROL = { museo:'fa-landmark', artista:'fa-palette' };
+
+async function cargarYRenderTestimoniosLanding(){
+  const wrapper = document.getElementById('testimonios-wrapper');
+  if(!wrapper) return;
+  let testimonios = [];
+  try{
+    const qs = await db.collection('testimonios').orderBy('fecha','desc').limit(20).get();
+    testimonios = qs.docs.map(d=>d.data());
+  }catch(e){
+    console.error('No se pudieron cargar los testimonios:', e);
+  }
+
+  if(!testimonios.length){
+    wrapper.innerHTML = `
+      <div class="swiper-slide" style="height:auto;">
+        <div class="h-full flex items-center justify-center text-center rounded-2xl border border-gray-100 shadow-sm p-8 bg-white">
+          <p class="text-sm text-gray-400">Todavía no hay testimonios cargados. Si tenés una cuenta, sé el primero en dejar el tuyo desde "Valorar conectARTE".</p>
+        </div>
+      </div>`;
+  } else {
+    wrapper.innerHTML = testimonios.map(t=>{
+      const estrellas = Math.max(1, Math.min(5, Number(t.estrellas)||5));
+      return `
+      <div class="swiper-slide" style="height:auto;">
+        <div class="h-full flex flex-col justify-between rounded-2xl border border-gray-100 shadow-sm p-8 bg-white">
+          <div>
+            <div class="flex gap-0.5 text-[#B5502E] mb-4">${Array.from({length:5}).map((_,i)=>`<i class="fa-solid fa-star text-xs" style="${i<estrellas?'':'opacity:0.25;'}"></i>`).join('')}</div>
+            <p class="text-gray-700 text-[15px] leading-relaxed">"${escapeHtml(t.texto)}"</p>
+          </div>
+          <div class="flex items-center gap-3 mt-8 pt-6 border-t border-gray-100">
+            <img src="${t.fotoUrl || avatarUrl(t.nombre)}" class="w-11 h-11 rounded-full bg-gray-100" style="object-fit:cover;">
+            <div><strong class="block text-sm text-gray-900">${escapeHtml(t.nombre)}</strong><span class="text-xs text-gray-400">${escapeHtml(t.cargo||'')}</span></div>
+            <i class="fa-solid ${ICONO_ROL[t.rol]||'fa-comment'} ml-auto text-gray-300 text-lg"></i>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  if(window.Swiper){
+    if(testimoniosSwiperInstance){ testimoniosSwiperInstance.destroy(true, true); }
+    testimoniosSwiperInstance = new Swiper('.testi-swiper', {
+      slidesPerView: 1,
+      spaceBetween: 20,
+      loop: testimonios.length > 3,
+      pagination: { el: '.testi-swiper .swiper-pagination', clickable: true },
+      navigation: { nextEl: '.testi-next', prevEl: '.testi-prev' },
+      breakpoints: { 768: { slidesPerView: 2 }, 1100: { slidesPerView: 3 } }
+    });
+  }
+}
+cargarYRenderTestimoniosLanding();
+
+/* =====================================================================
+   VALORAR CONECTARTE — testimonios reales (museo + artista)
+   ===================================================================== */
+let valorarEstrellasActual = 5;
+
+async function renderValorarConectarte(app){
+  const wrap = document.getElementById(app+'-view-valorar');
+  if(!wrap) return;
+  wrap.innerHTML = `<div class="main-head"><div><h1>Valorar conectARTE</h1><p class="sub">Cargando…</p></div></div>`;
+
+  let existente = null;
+  try{
+    const snap = await db.collection('testimonios').doc(usuarioActualUid).get();
+    if(snap.exists) existente = snap.data();
+  }catch(e){
+    console.error('No se pudo cargar tu testimonio:', e);
+  }
+
+  valorarEstrellasActual = existente ? (Number(existente.estrellas)||5) : 5;
+
+  wrap.innerHTML = `
+    <div class="main-head">
+      <div><h1>Valorar conectARTE</h1><p class="sub">${existente ? 'Ya dejaste una valoración — la podés editar cuando quieras.' : 'Contanos qué te pareció la plataforma. Tu reseña se muestra en la portada.'}</p></div>
+    </div>
+    <div class="card" style="max-width:560px;">
+      <label style="font-size:12px; font-weight:700; color:var(--ink-dim); text-transform:uppercase; letter-spacing:.04em; display:block; margin-bottom:8px;">Tu puntaje</label>
+      <div id="valorar-estrellas" style="display:flex; gap:6px; margin-bottom:20px; font-size:26px;">
+        ${[1,2,3,4,5].map(n=>`<i class="fa-solid fa-star" data-val="${n}" onclick="elegirEstrellas(${n})" style="cursor:pointer; color:${n<=valorarEstrellasActual?'#B5502E':'#D9D5C9'};"></i>`).join('')}
+      </div>
+      ${tw_field('Tu testimonio', tw_input('valorar-texto', {tag:'textarea', rows:4, value: existente?escapeHtml(existente.texto):'', placeholder:'Contanos tu experiencia usando conectARTE...'}))}
+      <button class="btn btn-solid" onclick="guardarTestimonio('${app}')"><i class="fa-solid fa-check"></i> ${existente?'Actualizar mi valoración':'Publicar valoración'}</button>
+      <p class="text-dim" style="font-size:11.5px; margin-top:10px;"><i class="fa-solid fa-circle-info"></i> Tu nombre, puntaje y testimonio se muestran públicamente en la portada de conectARTE.</p>
+    </div>
+  `;
+}
+
+function elegirEstrellas(n){
+  valorarEstrellasActual = n;
+  document.querySelectorAll('#valorar-estrellas i').forEach(el=>{
+    el.style.color = Number(el.dataset.val) <= n ? '#B5502E' : '#D9D5C9';
   });
+}
+
+async function guardarTestimonio(app){
+  const texto = document.getElementById('valorar-texto').value.trim();
+  if(!texto){ toast('Escribí tu testimonio antes de publicar','err'); return; }
+  if(!usuarioActualUid){ toast('Tenés que estar logueado para dejar una valoración','err'); return; }
+
+  let nombre, cargo, fotoUrl;
+  if(app==='museo'){
+    nombre = museoPerfil.nombre || 'Museo';
+    cargo = 'Museo' + (museoPerfil.ciudad ? `, ${museoPerfil.ciudad}` : '');
+    fotoUrl = null;
+  } else {
+    nombre = artistaPerfil.nombre || 'Artista';
+    cargo = artistaPerfil.disciplinaPrincipal || 'Artista';
+    fotoUrl = artistaPerfil.fotoUrl || null;
+  }
+
+  try{
+    await conReintentoDeAuth(() => db.collection('testimonios').doc(usuarioActualUid).set({
+      nombre, rol: app, cargo, estrellas: valorarEstrellasActual, texto, fotoUrl, fecha: new Date().toISOString()
+    }));
+    toast('¡Gracias por tu valoración!');
+  }catch(e){
+    console.error('No se pudo guardar tu testimonio:', e);
+    toast('No se pudo guardar tu testimonio, probá de nuevo','err');
+  }
 }
 
 cargarEstadoGlobal();
