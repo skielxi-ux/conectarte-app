@@ -640,6 +640,8 @@ let usuarioActualRol = null;
 let autosaveIntervalId = null;
 let datosGlobalesCargados = false;
 let datosPrivadosCargados = false;
+let juradoMuseoUid = null; // sólo se usa cuando usuarioActualRol==='jurado': a qué museo pertenece
+let miJuradoId = null; // id del jurado en el roster del museo (jurados[].id), sólo para sesiones de jurado
 
 async function guardarEstado(){
   // No guardamos nada hasta que sepamos con certeza qué había en Firebase:
@@ -652,11 +654,10 @@ async function guardarEstado(){
       console.error('No se pudo guardar el estado global en Firebase:', e);
     }
   }
-  if(!usuarioActualUid || !datosPrivadosCargados) return;
+  if(!usuarioActualUid || !datosPrivadosCargados || usuarioActualRol==='jurado') return;
   try{
     await conReintentoDeAuth(() => db.collection('usuarios').doc(usuarioActualUid).collection('datos').doc('privado').set({
       misPostulaciones, notificacionesArtista,
-      jurados, rubrica, evaluaciones,
       museoPerfil, equipoMuseo, artistaPerfil, obrasArtista
     }, {merge:true}));
   }catch(e){
@@ -718,21 +719,63 @@ function refrescarVistasCompartidas(){
   });
 }
 
+// El museo determina de quién son los datos de curaduría a usar: si sos el museo
+// mismo (Dirección/equipo), es tu propia cuenta; si sos un jurado externo con
+// cuenta propia, es la del museo al que pertenecés.
+function museoUidActivo(){
+  return usuarioActualRol==='jurado' ? juradoMuseoUid : usuarioActualUid;
+}
+
+// jurados/rúbrica viven en su propio documento (no en "privado") para poder
+// darle acceso de lectura a jurados externos sin exponerles el resto de los
+// datos privados del museo (perfil, equipo, obras, postulaciones).
+let curaduriaConfigListenerUid = null;
+let curaduriaConfigUnsub = null;
+function iniciarListenerCuraduriaConfig(museoUid){
+  if(!museoUid || curaduriaConfigListenerUid===museoUid) return;
+  curaduriaConfigListenerUid = museoUid;
+  curaduriaConfigUnsub = db.collection('usuarios').doc(museoUid).collection('curaduriaConfig').doc('config').onSnapshot(snap=>{
+    if(snap.exists){
+      const data = snap.data();
+      if(data.jurados) jurados = data.jurados;
+      if(data.rubrica) rubrica = data.rubrica;
+    }
+    try{ renderCuraduria(); renderCuraduriaTabla(); }catch(e){}
+  }, err=>{
+    console.error('No se pudo sincronizar jurados/rúbrica:', err);
+  });
+}
+
+async function guardarCuraduriaConfig(){
+  const museoUid = museoUidActivo();
+  if(!museoUid || usuarioActualRol==='jurado') return; // los jurados no gestionan la config
+  try{
+    await conReintentoDeAuth(() => db.collection('usuarios').doc(museoUid).collection('curaduriaConfig').doc('config').set({ jurados, rubrica }));
+  }catch(e){
+    console.error('No se pudo guardar jurados/rúbrica:', e);
+  }
+}
+
+// Evaluaciones: cada una es su propio documento (no un array embebido), para que
+// cada jurado externo pueda escribir la suya sin necesitar acceso al resto de los
+// datos del museo.
+let evaluacionesListenerUid = null;
+let evaluacionesUnsub = null;
+function iniciarListenerEvaluaciones(museoUid){
+  if(!museoUid || evaluacionesListenerUid===museoUid) return;
+  evaluacionesListenerUid = museoUid;
+  evaluacionesUnsub = db.collection('usuarios').doc(museoUid).collection('evaluaciones').onSnapshot(qs=>{
+    evaluaciones = qs.docs.map(d=>d.data());
+    try{ renderCuraduriaTabla(); }catch(e){}
+  }, err=>{
+    console.error('No se pudo sincronizar las evaluaciones:', err);
+  });
+}
+
 // Punto de partida en blanco para una cuenta nueva (no usa los datos de ejemplo de la demo).
 function plantillaPrivadaVacia(role, email){
   const base = {
     misPostulaciones: [], notificacionesArtista: [],
-    jurados: [],
-    rubrica: role==='museo' ? [
-      {id:uid('r'), criterio:'Coherencia conceptual', peso:15},
-      {id:uid('r'), criterio:'Calidad técnica', peso:15},
-      {id:uid('r'), criterio:'Originalidad', peso:15},
-      {id:uid('r'), criterio:'Viabilidad de montaje', peso:15},
-      {id:uid('r'), criterio:'Potencial patrimonial', peso:15},
-      {id:uid('r'), criterio:'Claridad de ficha técnica', peso:15},
-      {id:uid('r'), criterio:'Representatividad', peso:10}
-    ] : [],
-    evaluaciones: [],
     museoPerfil: { nombre:'', ciudad:'', tipo:'Museo público', fundacion:'', bio:'', especialidades:[], email: email||'', sitio:'', instagram:'', direccion:'', telefono:'', whatsapp:'', fotos:[] },
     equipoMuseo: role==='museo' ? [
       {id:uid('m'), nombre:'Vos (titular de la cuenta)', email: email||'', rol:'Dirección', permisos:[...ROLE_DEFAULTS['Dirección']], titular:true}
@@ -743,6 +786,16 @@ function plantillaPrivadaVacia(role, email){
   return base;
 }
 
+const RUBRICA_DEFAULT = [
+  {id:uid('r'), criterio:'Coherencia conceptual', peso:15},
+  {id:uid('r'), criterio:'Calidad técnica', peso:15},
+  {id:uid('r'), criterio:'Originalidad', peso:15},
+  {id:uid('r'), criterio:'Viabilidad de montaje', peso:15},
+  {id:uid('r'), criterio:'Potencial patrimonial', peso:15},
+  {id:uid('r'), criterio:'Claridad de ficha técnica', peso:15},
+  {id:uid('r'), criterio:'Representatividad', peso:10}
+];
+
 // Datos privados: sólo se cargan después de iniciar sesión.
 async function cargarEstadoPrivado(uid, role, email){
   try{
@@ -752,9 +805,6 @@ async function cargarEstadoPrivado(uid, role, email){
       const data = snap.data();
       if(data.misPostulaciones) misPostulaciones = data.misPostulaciones;
       if(data.notificacionesArtista) notificacionesArtista = data.notificacionesArtista;
-      if(data.jurados) jurados = data.jurados;
-      if(data.rubrica) rubrica = data.rubrica;
-      if(data.evaluaciones) evaluaciones = data.evaluaciones;
       if(data.museoPerfil) museoPerfil = data.museoPerfil;
       if(data.equipoMuseo) equipoMuseo = data.equipoMuseo;
       if(data.artistaPerfil) artistaPerfil = data.artistaPerfil;
@@ -764,14 +814,27 @@ async function cargarEstadoPrivado(uid, role, email){
       const vacio = plantillaPrivadaVacia(role, email);
       misPostulaciones = vacio.misPostulaciones;
       notificacionesArtista = vacio.notificacionesArtista;
-      jurados = vacio.jurados;
-      rubrica = vacio.rubrica;
-      evaluaciones = vacio.evaluaciones;
       museoPerfil = vacio.museoPerfil;
       equipoMuseo = vacio.equipoMuseo;
       artistaPerfil = vacio.artistaPerfil;
       obrasArtista = vacio.obrasArtista;
       await ref.set(vacio);
+    }
+    if(role==='museo'){
+      // jurados/rúbrica: si es cuenta nueva, sembramos la rúbrica sugerida.
+      const cfgRef = db.collection('usuarios').doc(uid).collection('curaduriaConfig').doc('config');
+      const cfgSnap = await conReintentoDeAuth(() => cfgRef.get());
+      if(cfgSnap.exists){
+        const cfg = cfgSnap.data();
+        jurados = cfg.jurados || [];
+        rubrica = cfg.rubrica || [];
+      } else {
+        jurados = [];
+        rubrica = RUBRICA_DEFAULT;
+        await cfgRef.set({ jurados, rubrica });
+      }
+      iniciarListenerCuraduriaConfig(uid);
+      iniciarListenerEvaluaciones(uid);
     }
   }catch(e){
     console.error('No se pudo cargar el estado privado desde Firebase:', e);
@@ -1047,6 +1110,12 @@ async function entrarConSesion(user, rolPorDefecto){
   try{
     const udoc = await conReintentoDeAuth(() => db.collection('usuarios').doc(user.uid).get());
     usuarioActualRol = udoc.exists && udoc.data().rol ? udoc.data().rol : rolPorDefecto;
+    if(usuarioActualRol==='jurado'){
+      // Esta cuenta es de jurado pero entró por "Soy museo"/"Soy artista": la redirigimos bien.
+      const d = udoc.data();
+      try{ await entrarConSesionJurado(user.uid, d.museoUid, d.juradoId, d.nombre); }catch(e){}
+      return;
+    }
   }catch(e){
     console.error('No se pudo leer el rol de la cuenta:', e);
     usuarioActualRol = rolPorDefecto;
@@ -1098,6 +1167,11 @@ async function logout(){
   usuarioActualUid = null;
   usuarioActualRol = null;
   datosPrivadosCargados = false;
+  juradoMuseoUid = null;
+  miJuradoId = null;
+  if(curaduriaConfigUnsub){ curaduriaConfigUnsub(); curaduriaConfigUnsub = null; curaduriaConfigListenerUid = null; }
+  if(evaluacionesUnsub){ evaluacionesUnsub(); evaluacionesUnsub = null; evaluacionesListenerUid = null; }
+  jurados = []; rubrica = []; evaluaciones = [];
   if(autosaveIntervalId){ clearInterval(autosaveIntervalId); autosaveIntervalId = null; }
   document.getElementById('museo-app').classList.add('hidden');
   document.getElementById('artista-app').classList.add('hidden');
@@ -1897,19 +1971,9 @@ function updateMuseoBadges(){
 /* =====================================================================
    MUSEO — CURADURÍA Y JURADO
    ===================================================================== */
-let jurados = [
-  {id:uid('j'), nombre:'Dra. Elena Ríos', tipo:'Externo', peso:1.5},
-  {id:uid('j'), nombre:'Curador interno — Museo', tipo:'Interno', peso:1},
-  {id:uid('j'), nombre:'Marcos Villalba', tipo:'Externo', peso:1}
-];
-
-let rubrica = [
-  {id:uid('r'), criterio:'Originalidad', peso:35},
-  {id:uid('r'), criterio:'Técnica', peso:35},
-  {id:uid('r'), criterio:'Pertinencia temática', peso:30}
-];
-
-let evaluaciones = []; // {convId, postIdx, juradoId, ronda, puntajes:{criterioId:valor}, nota}
+let jurados = [];
+let rubrica = [];
+let evaluaciones = []; // se cargan por cuenta desde Firestore (curaduriaConfig / evaluaciones), no acá
 
 let curaduriaState = { convId: null, modo:'abierta', ronda:1 };
 
@@ -1918,6 +1982,7 @@ function convocatoriasConPostulantes(){
 }
 
 function puedeGestionarCuraduria(){
+  if(usuarioActualRol==='jurado') return false;
   const member = equipoMuseo.find(m=>m.id===currentSimulatedMemberId);
   return !member || member.rol==='Dirección';
 }
@@ -1937,18 +2002,23 @@ function renderCuraduria(){
       <div class="card">
         <div class="section-title"><i class="fa-solid fa-users-gear" style="color:var(--red-dark); margin-right:6px;"></i>Jurados</div>
         <table>
-          <thead><tr><th>Nombre</th><th>Tipo</th><th>Peso de voto</th>${puedeGestionar?'<th></th>':''}</tr></thead>
+          <thead><tr><th>Nombre</th><th>Tipo</th><th>Peso de voto</th><th>Invitación</th>${puedeGestionar?'<th></th>':''}</tr></thead>
           <tbody>
             ${jurados.map(j=>`
               <tr>
-                <td><strong>${escapeHtml(j.nombre)}</strong></td>
+                <td><strong>${escapeHtml(j.nombre)}</strong><div class="text-dim" style="font-size:11px;">${escapeHtml(j.email||'')}</div></td>
                 <td><span class="pill ${j.tipo==='Externo'?'pill-amber':'pill-sage'}">${j.tipo}</span></td>
                 <td class="num">×${j.peso}</td>
+                <td>${j.codigo ? `
+                  <span class="mono" style="background:var(--ink-3); border:1px solid var(--line-strong); padding:3px 8px; border-radius:6px; font-weight:700; letter-spacing:.06em; font-size:12px;">${escapeHtml(j.codigo)}</span>
+                  <button class="btn btn-sm btn-ghost" onclick="copiarCodigoJurado('${escJs(j.codigo)}')" title="Copiar código"><i class="fa-solid fa-copy"></i></button>
+                ` : '<span class="text-dim" style="font-size:11px;">Sin invitación</span>'}</td>
                 ${puedeGestionar?`<td><button class="btn btn-sm btn-danger" onclick="eliminarJurado('${j.id}')"><i class="fa-solid fa-trash"></i></button></td>`:''}
               </tr>`).join('')}
           </tbody>
         </table>
-        ${puedeGestionar?`<button class="btn btn-sm" style="margin-top:12px;" onclick="openJuradoModal()"><i class="fa-solid fa-plus"></i> Agregar jurado</button>`:''}
+        ${puedeGestionar?`<button class="btn btn-sm" style="margin-top:12px;" onclick="openJuradoModal()"><i class="fa-solid fa-plus"></i> Agregar jurado</button>
+        <p class="text-dim" style="font-size:11px; margin-top:8px;">Compartile a cada jurado su email y código: van a entrar desde "Soy jurado" en la portada y crear su propia cuenta.</p>` : ''}
       </div>
 
       <div class="card">
@@ -2007,8 +2077,8 @@ function onCuraduriaConvChange(){ curaduriaState.convId = document.getElementByI
 function onCuraduriaModoChange(){ curaduriaState.modo = document.getElementById('cur-modo').value; renderCuraduriaTabla(); }
 function onCuraduriaRondaChange(){ curaduriaState.ronda = Number(document.getElementById('cur-ronda').value); renderCuraduriaTabla(); }
 
-function puntajePonderadoPostulante(convId, idx, ronda){
-  const evals = evaluaciones.filter(e=>e.convId===convId && e.postIdx===idx && e.ronda===ronda);
+function puntajePonderadoPostulante(postId, ronda){
+  const evals = evaluaciones.filter(e=>e.postId===postId && e.ronda===ronda);
   if(!evals.length) return null;
   const totalPeso = rubrica.reduce((s,r)=>s+Number(r.peso||0),0) || 100;
   let sumaPesoJurado = 0, sumaPonderada = 0;
@@ -2030,15 +2100,16 @@ function renderCuraduriaTabla(){
   if(!c){ wrap.innerHTML = `<div class="empty-row">Todavía no hay convocatorias con postulantes para evaluar.</div>`; return; }
 
   const pendientes = c.postulantes.filter(p=>p.estado==='Nuevo').length;
-  const evaluables = c.postulantes.map((p,idx)=>({p,idx})).filter(o=>o.p.estado!=='Nuevo');
+  const evaluables = c.postulantes.map((p,idx)=>({p,idx})).filter(o=>o.p.estado!=='Nuevo' && o.p.id);
 
   const rows = evaluables.map(({p,idx})=>{
-    const evalsRecibidas = evaluaciones.filter(e=>e.convId===c.id && e.postIdx===idx && e.ronda===curaduriaState.ronda).length;
-    const puntaje = puntajePonderadoPostulante(c.id, idx, curaduriaState.ronda);
+    const evalsRecibidas = evaluaciones.filter(e=>e.postId===p.id && e.ronda===curaduriaState.ronda).length;
+    const puntaje = puntajePonderadoPostulante(p.id, curaduriaState.ronda);
     const decidido = p.estado==='Aceptada' || p.estado==='Rechazada';
     const estado = decidido ? p.estado : (evalsRecibidas===0 ? 'Sin evaluar' : evalsRecibidas<jurados.length ? 'En evaluación' : 'Evaluado');
     const pillClass = estado==='Evaluado' ? 'pill-sage' : estado==='En evaluación' ? 'pill-amber' : estado==='Aceptada' ? 'pill-sage' : estado==='Rechazada' ? 'pill-red' : '';
     const nombreMostrado = curaduriaState.modo==='ciega' ? `Postulante anónimo #${idx+1}` : escapeHtml(p.nombre);
+    const yaEvalueYo = usuarioActualRol==='jurado' && evaluaciones.some(e=>e.postId===p.id && e.ronda===curaduriaState.ronda && e.juradoUid===usuarioActualUid);
     return `
       <tr>
         <td><strong>${nombreMostrado}</strong>${curaduriaState.modo==='ciega' ? `<div class="text-dim" style="font-size:11px;">Identidad oculta durante la evaluación</div>` : `<div class="text-dim" style="font-size:11.5px;">${escapeHtml(p.disciplina)}</div>`}</td>
@@ -2047,7 +2118,7 @@ function renderCuraduriaTabla(){
         <td><span class="pill ${pillClass}">${estado}</span></td>
         <td>
           <div class="row-actions">
-            <button class="btn btn-sm btn-solid" onclick="openEvaluarModal('${c.id}',${idx})"><i class="fa-solid fa-scale-balanced"></i> Evaluar</button>
+            <button class="btn btn-sm btn-solid" onclick="openEvaluarModal('${c.id}',${idx})"><i class="fa-solid fa-scale-balanced"></i> ${yaEvalueYo?'Editar mi evaluación':'Evaluar'}</button>
             ${!decidido && puedeGestionarCuraduria() ? `
               <button class="btn btn-sm" style="color:var(--sage); border-color:var(--sage);" onclick="decidirPostulante('${c.id}',${idx},'aceptar')" title="Aceptar y notificar al artista"><i class="fa-solid fa-check"></i></button>
               <button class="btn btn-sm btn-danger" onclick="decidirPostulante('${c.id}',${idx},'rechazar')" title="Rechazar y notificar al artista"><i class="fa-solid fa-xmark"></i></button>
@@ -2128,10 +2199,12 @@ function decidirPostulante(convId, idx, decision){
 function openJuradoModal(){
   const body = `
     ${tw_field('Nombre', tw_input('j-nombre', {placeholder:'Ej: Dra. Elena Ríos'}))}
+    ${tw_field('Email', tw_input('j-email', {type:'email', placeholder:'jurado@email.com'}))}
     <div class="grid grid-cols-2 gap-4">
       ${tw_field('Tipo', tw_input('j-tipo', {tag:'select', optionsHtml:'<option>Interno</option><option>Externo</option>'}))}
       ${tw_field('Peso de voto', tw_input('j-peso', {type:'number', value:'1'}))}
     </div>
+    <p class="text-dim" style="font-size:11.5px;"><i class="fa-solid fa-circle-info"></i> Con el email vamos a generar un código de invitación para que este jurado se cree su propia cuenta y evalúe con su login.</p>
     <div class="flex justify-end gap-3 mt-6">
       <button class="px-4 py-2.5 text-sm font-semibold text-gray-500 hover:text-gray-700 transition" onclick="closeModal()">Cancelar</button>
       <button class="px-5 py-2.5 rounded-lg text-white text-sm font-bold inline-flex items-center gap-2 hover:opacity-90 transition" style="background:#B5502E;" onclick="guardarJurado()"><i class="fa-solid fa-check" aria-hidden="true"></i> Agregar</button>
@@ -2139,20 +2212,31 @@ function openJuradoModal(){
   `;
   openModal(tw_modalShell('Jurado', 'Agregar jurado', 'Puede ser un miembro interno del museo o un jurado invitado externo.', body, false));
 }
-function guardarJurado(){
+async function guardarJurado(){
   const nombre = document.getElementById('j-nombre').value.trim();
+  const email = document.getElementById('j-email').value.trim().toLowerCase();
   if(!nombre){ toast('Ingresá el nombre del jurado','err'); return; }
-  jurados.push({id:uid('j'), nombre, tipo:document.getElementById('j-tipo').value, peso:Number(document.getElementById('j-peso').value)||1});
+  if(!email){ toast('Ingresá el email del jurado','err'); return; }
+  const juradoId = uid('j');
+  const codigo = generarCodigoAcceso();
+  jurados.push({id:juradoId, nombre, email, tipo:document.getElementById('j-tipo').value, peso:Number(document.getElementById('j-peso').value)||1, codigo});
+  try{
+    await db.collection('invitacionesJurado').doc(codigo).set({
+      museoUid: usuarioActualUid, museoNombre: museoPerfil.nombre, juradoId, nombre, email, creado: new Date().toISOString()
+    });
+  }catch(e){
+    console.error('No se pudo crear la invitación del jurado:', e);
+  }
   closeModal();
-  toast('Jurado agregado');
+  toast('Jurado agregado — copiale el código de invitación');
   renderCuraduria();
-  guardarEstado();
+  guardarCuraduriaConfig();
 }
-function eliminarJurado(id){
+async function eliminarJurado(id){
   jurados = jurados.filter(j=>j.id!==id);
   toast('Jurado eliminado');
   renderCuraduria();
-  guardarEstado();
+  guardarCuraduriaConfig();
 }
 
 function openCriterioModal(id){
@@ -2180,50 +2264,74 @@ function guardarCriterio(id){
     toast('Criterio agregado a la rúbrica');
   }
   closeModal();
-  guardarEstado();
+  guardarCuraduriaConfig();
   renderCuraduria();
 }
 function eliminarCriterio(id){
   rubrica = rubrica.filter(r=>r.id!==id);
   toast('Criterio eliminado');
-  guardarEstado();
+  guardarCuraduriaConfig();
   renderCuraduria();
 }
 
 function openEvaluarModal(convId, idx){
   const c = convocatorias.find(x=>x.id===convId);
-  const p = c.postulantes[idx];
-  if(!c || !p) return;
+  const p = c ? c.postulantes[idx] : null;
+  if(!c || !p || !p.id){ toast('Esta postulación es de antes del sistema de evaluación con cuentas propias y no se puede evaluar','err'); return; }
   const nombreMostrado = curaduriaState.modo==='ciega' ? `Postulante anónimo #${idx+1}` : escapeHtml(p.nombre);
+
+  const esJuradoReal = usuarioActualRol==='jurado';
+  const miJurado = esJuradoReal ? jurados.find(j=>j.id===miJuradoId) : null;
+  const evalPrevia = esJuradoReal
+    ? evaluaciones.find(e=>e.postId===p.id && e.ronda===curaduriaState.ronda && e.juradoUid===usuarioActualUid)
+    : null;
 
   const body = `
     ${curaduriaState.modo==='ciega' ? `<div class="text-dim" style="font-size:12.5px; margin-bottom:14px;"><i class="fa-solid fa-eye-slash" style="margin-right:6px;"></i>Evaluación a ciegas: la identidad del artista permanece oculta hasta cerrar la ronda.</div>` : ''}
-    ${tw_field('Evaluando como (jurado)', tw_input('ev-jurado', {tag:'select', optionsHtml: jurados.map(j=>`<option value="${j.id}">${escapeHtml(j.nombre)} (${j.tipo}, ×${j.peso})</option>`).join('')}))}
+    ${esJuradoReal
+      ? `<p class="text-dim" style="font-size:12.5px; margin-bottom:14px;"><i class="fa-solid fa-user-check" style="margin-right:6px;"></i>Evaluando como <strong>${escapeHtml(miJurado?miJurado.nombre:'vos')}</strong></p>`
+      : tw_field('Evaluando como (jurado)', tw_input('ev-jurado', {tag:'select', optionsHtml: jurados.map(j=>`<option value="${j.id}">${escapeHtml(j.nombre)} (${j.tipo}, ×${j.peso})</option>`).join('')}))
+    }
     <div class="grid grid-cols-2 gap-4">
-      ${rubrica.map(r=>tw_field(`${escapeHtml(r.criterio)} (peso ${r.peso}%)`, tw_input('ev-crit-'+r.id, {type:'number', value:'7', attrs:'min="0" max="10" step="0.5"'}))).join('')}
+      ${rubrica.map(r=>tw_field(`${escapeHtml(r.criterio)} (peso ${r.peso}%)`, tw_input('ev-crit-'+r.id, {type:'number', value: evalPrevia ? (evalPrevia.puntajes[r.id]??7) : '7', attrs:'min="0" max="10" step="0.5"'}))).join('')}
     </div>
-    ${tw_field('Nota privada (solo la ve este jurado)', tw_input('ev-nota', {tag:'textarea', rows:3, placeholder:'Observaciones internas sobre la obra, no visibles para otros jurados ni para el artista'}))}
+    ${tw_field('Nota privada (solo la ve este jurado)', tw_input('ev-nota', {tag:'textarea', rows:3, value: evalPrevia?escapeHtml(evalPrevia.nota||''):'', placeholder:'Observaciones internas sobre la obra, no visibles para otros jurados ni para el artista'}))}
     <div class="flex justify-end gap-3 mt-6">
       <button class="px-4 py-2.5 text-sm font-semibold text-gray-500 hover:text-gray-700 transition" onclick="closeModal()">Cancelar</button>
-      <button class="px-5 py-2.5 rounded-lg text-white text-sm font-bold inline-flex items-center gap-2 hover:opacity-90 transition" style="background:#B5502E;" onclick="guardarEvaluacion('${convId}',${idx})"><i class="fa-solid fa-check" aria-hidden="true"></i> Guardar evaluación</button>
+      <button id="ev-submit-btn" class="px-5 py-2.5 rounded-lg text-white text-sm font-bold inline-flex items-center gap-2 hover:opacity-90 transition" style="background:#B5502E;" onclick="guardarEvaluacion('${p.id}')"><i class="fa-solid fa-check" aria-hidden="true"></i> Guardar evaluación</button>
     </div>
   `;
   openModal(tw_modalShell(`Ronda ${curaduriaState.ronda}`, nombreMostrado, 'Puntuá cada criterio de 0 a 10. La ponderación se calcula automáticamente.', body, true));
 }
 
-function guardarEvaluacion(convId, idx){
-  const juradoId = document.getElementById('ev-jurado').value;
+async function guardarEvaluacion(postId){
+  const esJuradoReal = usuarioActualRol==='jurado';
+  const juradoId = esJuradoReal ? miJuradoId : document.getElementById('ev-jurado').value;
+  const jurado = jurados.find(j=>j.id===juradoId);
   const puntajes = {};
   rubrica.forEach(r=>{ puntajes[r.id] = Number(document.getElementById('ev-crit-'+r.id).value) || 0; });
   const nota = document.getElementById('ev-nota').value.trim();
+  const museoUid = museoUidActivo();
+  if(!museoUid){ toast('No se pudo identificar la cuenta del museo','err'); return; }
 
-  evaluaciones = evaluaciones.filter(e=>!(e.convId===convId && e.postIdx===idx && e.juradoId===juradoId && e.ronda===curaduriaState.ronda));
-  evaluaciones.push({convId, postIdx:idx, juradoId, ronda:curaduriaState.ronda, puntajes, nota});
+  const evalId = `${postId}_${juradoId}_r${curaduriaState.ronda}`;
+  const evalData = {
+    convId: curaduriaState.convId, postId, juradoId, juradoNombre: jurado?jurado.nombre:'',
+    juradoUid: usuarioActualUid, ronda: curaduriaState.ronda, puntajes, nota, fecha: new Date().toISOString()
+  };
 
-  closeModal();
-  toast('Evaluación guardada');
-  renderCuraduriaTabla();
-  guardarEstado();
+  const btn = document.getElementById('ev-submit-btn');
+  if(btn){ btn.disabled = true; }
+
+  try{
+    await conReintentoDeAuth(() => db.collection('usuarios').doc(museoUid).collection('evaluaciones').doc(evalId).set(evalData));
+    closeModal();
+    toast('Evaluación guardada');
+  }catch(e){
+    console.error('No se pudo guardar la evaluación:', e);
+    toast('No se pudo guardar la evaluación, probá de nuevo','err');
+    if(btn){ btn.disabled = false; }
+  }
 }
 
 /* =====================================================================
@@ -3125,6 +3233,22 @@ function salirSimulacion(){
 }
 
 function aplicarPermisos(){
+  if(usuarioActualRol==='jurado'){
+    const permisos = ['dashboard','curaduria'];
+    document.querySelectorAll('.nav-item[data-app="museo"]').forEach(el=>{
+      el.style.display = permisos.includes(el.dataset.view) ? '' : 'none';
+    });
+    const existingBanner = document.getElementById('sim-banner');
+    if(existingBanner) existingBanner.remove();
+    const banner = document.createElement('div');
+    banner.id = 'sim-banner';
+    banner.style.cssText = 'background:#FFF7ED;border:1px solid #FDE68A;color:#92400E;font-size:13px;padding:10px 16px;border-radius:var(--radius);margin-bottom:20px;font-family:var(--font-app);';
+    banner.innerHTML = `<i class="fa-solid fa-gavel" style="margin-right:6px;"></i>Sesión de jurado — evaluás postulaciones, pero no podés gestionar convocatorias, equipo ni decidir aceptar/rechazar.`;
+    const main = document.querySelector('#museo-app .main');
+    if(main) main.prepend(banner);
+    return;
+  }
+
   const member = equipoMuseo.find(m=>m.id===currentSimulatedMemberId);
   const permisos = member ? member.permisos : PERMISSION_SECTIONS.map(s=>s.key);
 
@@ -3139,17 +3263,27 @@ function aplicarPermisos(){
     const banner = document.createElement('div');
     banner.id = 'sim-banner';
     banner.style.cssText = 'background:#FFF7ED;border:1px solid #FDE68A;color:#92400E;font-size:13px;padding:10px 16px;border-radius:var(--radius);display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;font-family:var(--font-app);';
-    const texto = juradoSesionReal
-      ? `<i class="fa-solid fa-gavel" style="margin-right:6px;"></i>Sesión de jurado — <strong>${escapeHtml(member.nombre)}</strong> · accedés a ${permisos.length} de ${PERMISSION_SECTIONS.length} secciones del panel del museo`
-      : `<i class="fa-solid fa-eye" style="margin-right:6px;"></i>Estás viendo el panel como <strong>${escapeHtml(member.nombre)}</strong> (${escapeHtml(member.rol)}) — solo ve ${permisos.length} de ${PERMISSION_SECTIONS.length} secciones`;
-    const boton = juradoSesionReal ? '' : `<button class="btn btn-sm" onclick="salirSimulacion()">Volver a mi vista</button>`;
+    const texto = `<i class="fa-solid fa-eye" style="margin-right:6px;"></i>Estás viendo el panel como <strong>${escapeHtml(member.nombre)}</strong> (${escapeHtml(member.rol)}) — solo ve ${permisos.length} de ${PERMISSION_SECTIONS.length} secciones`;
+    const boton = `<button class="btn btn-sm" onclick="salirSimulacion()">Volver a mi vista</button>`;
     banner.innerHTML = `<span>${texto}</span>${boton}`;
     const main = document.querySelector('#museo-app .main');
     if(main) main.prepend(banner);
   }
 }
 
+let juradoAuthModo = 'registro'; // 'registro' | 'login'
+
 function openLoginModalJurado(){
+  juradoAuthModo = 'registro';
+  renderJuradoAuthModal();
+}
+function toggleJuradoAuthModo(){
+  juradoAuthModo = juradoAuthModo==='registro' ? 'login' : 'registro';
+  renderJuradoAuthModal();
+}
+
+function renderJuradoAuthModal(){
+  const esRegistro = juradoAuthModo==='registro';
   openModal(`
     <div class="w-full max-w-md bg-white rounded-3xl shadow-2xl p-8 md:p-10 relative" style="font-family:'Lato',sans-serif;">
       <button class="absolute top-6 right-6 text-gray-400 hover:text-gray-700 transition" onclick="closeModal()" aria-label="Cerrar"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
@@ -3157,52 +3291,110 @@ function openLoginModalJurado(){
         <div class="h-1.5 flex-1 rounded-full" style="background:#C1573A;"></div>
         <div class="h-1.5 flex-1 rounded-full bg-gray-200"></div>
       </div>
-      <p class="text-[11px] font-bold uppercase tracking-widest text-gray-500 mb-3">Ingreso con código de invitación</p>
-      <h2 class="text-[26px] leading-tight font-black text-gray-900 mb-2">Ingresá como jurado</h2>
-      <p class="text-sm text-gray-500 mb-7">Necesitás el código de acceso que te compartió la institución. Sin ese código no podés entrar.</p>
+      <p class="text-[11px] font-bold uppercase tracking-widest text-gray-500 mb-3">${esRegistro ? 'Primera vez · con código de invitación' : 'Ya tengo cuenta de jurado'}</p>
+      <h2 class="text-[26px] leading-tight font-black text-gray-900 mb-2">${esRegistro ? 'Creá tu cuenta de jurado' : 'Ingresá como jurado'}</h2>
+      <p class="text-sm text-gray-500 mb-7">${esRegistro ? 'Necesitás el código de invitación que te compartió la institución.' : 'Ingresá con el email y contraseña que usaste para crear tu cuenta.'}</p>
 
-      <div class="mb-4">
-        <label class="block text-sm font-bold text-gray-800 mb-1.5">Email</label>
-        <input id="jurado-email" class="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2" style="--tw-ring-color:#C1573A66;" placeholder="tu@email.com">
-      </div>
-      <div class="mb-2">
-        <label class="block text-sm font-bold text-gray-800 mb-1.5">Código de acceso</label>
-        <input id="jurado-codigo" class="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 uppercase tracking-widest font-bold" style="--tw-ring-color:#C1573A66;" placeholder="Ej: X7K2QP" maxlength="6">
-      </div>
-      <p id="jurado-error" class="text-xs text-red-600 font-semibold mb-4 hidden"><i class="fa-solid fa-circle-exclamation"></i> Email o código incorrecto.</p>
+      <div id="jurado-error" class="hidden mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2"></div>
 
-      <button onclick="doLoginJurado()" class="w-full rounded-xl py-3.5 font-bold text-white text-[15px] transition hover:opacity-90 mt-2" style="background:#B5502E;">
-        Ingresar
+      ${esRegistro ? `
+        <div class="mb-4">
+          <label class="block text-sm font-bold text-gray-800 mb-1.5">Código de invitación</label>
+          <input id="jurado-codigo" class="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 uppercase tracking-widest font-bold" style="--tw-ring-color:#C1573A66;" placeholder="Ej: X7K2QP" maxlength="6">
+        </div>
+      ` : `
+        <div class="mb-4">
+          <label class="block text-sm font-bold text-gray-800 mb-1.5">Email</label>
+          <input id="jurado-email" type="email" class="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2" style="--tw-ring-color:#C1573A66;" placeholder="tu@email.com">
+        </div>
+      `}
+      <div class="mb-6">
+        <label class="block text-sm font-bold text-gray-800 mb-1.5">Contraseña</label>
+        <input id="jurado-pass" type="password" class="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2" style="--tw-ring-color:#C1573A66;" placeholder="••••••••" onkeydown="if(event.key==='Enter') submitJuradoAuth()">
+      </div>
+
+      <button id="jurado-submit-btn" onclick="submitJuradoAuth()" class="w-full rounded-xl py-3.5 font-bold text-white text-[15px] transition hover:opacity-90" style="background:#B5502E;">
+        ${esRegistro ? 'Crear cuenta' : 'Ingresar'}
       </button>
-      <p class="text-center text-xs text-gray-400 mt-5">Tu código lo genera la dirección del museo desde "Equipo y permisos".</p>
+      <p class="text-center text-sm text-gray-500 mt-5">
+        ${esRegistro ? '¿Ya tenés cuenta?' : '¿Primera vez? Necesitás un código de invitación'}
+        <strong style="color:#B5502E; cursor:pointer;" onclick="toggleJuradoAuthModo()">${esRegistro ? 'Ingresá' : 'Registrate'}</strong>
+      </p>
     </div>
   `);
 }
 
-function doLoginJurado(){
-  const email = document.getElementById('jurado-email').value.trim().toLowerCase();
-  const codigo = document.getElementById('jurado-codigo').value.trim().toUpperCase();
-  const errorMsg = document.getElementById('jurado-error');
+function mostrarErrorJurado(msg){
+  const el = document.getElementById('jurado-error');
+  if(!el) return;
+  el.textContent = msg;
+  el.classList.remove('hidden');
+}
 
-  const member = equipoMuseo.find(m => m.rol==='Jurado' && m.email.toLowerCase()===email && m.codigoAcceso===codigo);
-  if(!member){
-    errorMsg.classList.remove('hidden');
-    return;
+async function submitJuradoAuth(){
+  const pass = document.getElementById('jurado-pass').value || '';
+  const btn = document.getElementById('jurado-submit-btn');
+  if(!pass){ mostrarErrorJurado('Ingresá tu contraseña.'); return; }
+
+  if(btn){ btn.disabled = true; btn.textContent = 'Un momento…'; }
+
+  try{
+    if(juradoAuthModo==='registro'){
+      const codigo = (document.getElementById('jurado-codigo').value || '').trim().toUpperCase();
+      if(!codigo){ mostrarErrorJurado('Ingresá el código de invitación.'); if(btn){btn.disabled=false; btn.textContent='Crear cuenta';} return; }
+
+      const inviteSnap = await db.collection('invitacionesJurado').doc(codigo).get();
+      if(!inviteSnap.exists){
+        mostrarErrorJurado('Ese código no existe o ya venció. Pedile uno nuevo a la institución.');
+        if(btn){ btn.disabled=false; btn.textContent='Crear cuenta'; }
+        return;
+      }
+      const invite = inviteSnap.data();
+      const userCred = await auth.createUserWithEmailAndPassword(invite.email, pass);
+      await userCred.user.getIdToken();
+      await db.collection('usuarios').doc(userCred.user.uid).set({
+        email: invite.email, rol: 'jurado', museoUid: invite.museoUid, juradoId: invite.juradoId, nombre: invite.nombre, creado: new Date().toISOString()
+      });
+      await entrarConSesionJurado(userCred.user.uid, invite.museoUid, invite.juradoId, invite.nombre);
+    } else {
+      const email = (document.getElementById('jurado-email').value || '').trim();
+      if(!email){ mostrarErrorJurado('Ingresá tu email.'); if(btn){btn.disabled=false; btn.textContent='Ingresar';} return; }
+      const userCred = await auth.signInWithEmailAndPassword(email, pass);
+      await userCred.user.getIdToken();
+      const udoc = await conReintentoDeAuth(() => db.collection('usuarios').doc(userCred.user.uid).get());
+      if(!udoc.exists || udoc.data().rol!=='jurado'){
+        mostrarErrorJurado('Esta cuenta no es de jurado. Si sos artista o museo, usá esas opciones en la portada.');
+        if(btn){ btn.disabled=false; btn.textContent='Ingresar'; }
+        return;
+      }
+      const d = udoc.data();
+      await entrarConSesionJurado(userCred.user.uid, d.museoUid, d.juradoId, d.nombre);
+    }
+  }catch(e){
+    mostrarErrorJurado(traducirErrorFirebase(e));
+    if(btn){ btn.disabled = false; btn.textContent = juradoAuthModo==='registro' ? 'Crear cuenta' : 'Ingresar'; }
   }
-  errorMsg.classList.add('hidden');
+}
+
+async function entrarConSesionJurado(uidJurado, museoUid, juradoId, nombre){
+  usuarioActualUid = uidJurado;
+  usuarioActualRol = 'jurado';
+  juradoMuseoUid = museoUid;
+  miJuradoId = juradoId;
+  datosPrivadosCargados = true; // los jurados no tienen doc "privado" propio del museo
+
+  iniciarListenerCuraduriaConfig(museoUid);
+  iniciarListenerEvaluaciones(museoUid);
 
   closeModal();
   document.getElementById('landing-root').classList.add('hidden');
   document.getElementById('museo-app').classList.remove('hidden');
-
-  currentSimulatedMemberId = member.id;
-  juradoSesionReal = true;
   const agname = document.getElementById('museo-agname');
-  if(agname) agname.textContent = member.nombre + ' · Jurado';
+  if(agname) agname.textContent = nombre + ' · Jurado';
 
-  showView('museo', member.permisos.includes('dashboard') ? 'dashboard' : member.permisos[0]);
+  showView('museo', 'curaduria');
   window.scrollTo(0,0);
-  toast(`Ingresaste como jurado: ${member.nombre}`);
+  toast(`Ingresaste como jurado: ${nombre}`);
 }
 
 
