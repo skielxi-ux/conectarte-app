@@ -2048,7 +2048,7 @@ function renderCuraduriaTabla(){
         <td>
           <div class="row-actions">
             <button class="btn btn-sm btn-solid" onclick="openEvaluarModal('${c.id}',${idx})"><i class="fa-solid fa-scale-balanced"></i> Evaluar</button>
-            ${!decidido ? `
+            ${!decidido && puedeGestionarCuraduria() ? `
               <button class="btn btn-sm" style="color:var(--sage); border-color:var(--sage);" onclick="decidirPostulante('${c.id}',${idx},'aceptar')" title="Aceptar y notificar al artista"><i class="fa-solid fa-check"></i></button>
               <button class="btn btn-sm btn-danger" onclick="decidirPostulante('${c.id}',${idx},'rechazar')" title="Rechazar y notificar al artista"><i class="fa-solid fa-xmark"></i></button>
             ` : ''}
