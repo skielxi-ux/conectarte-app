@@ -3041,15 +3041,16 @@ const PERMISSION_SECTIONS = [
   {key:'blog', label:'Blog'},
   {key:'historial', label:'Historial de convocatorias'},
   {key:'perfil', label:'Perfil público'},
-  {key:'equipo', label:'Equipo y permisos'}
+  {key:'equipo', label:'Equipo y permisos'},
+  {key:'valorar', label:'Valorar conectARTE'}
 ];
 const ROLE_DEFAULTS = {
   'Dirección': PERMISSION_SECTIONS.map(s=>s.key),
   'Jurado': ['dashboard','curaduria'],
-  'Curador': ['dashboard','postulantes','notificaciones','curaduria','catalogos','recorrido','historial'],
-  'Museógrafo': ['dashboard','recorrido','catalogos'],
-  'Administrativo': ['dashboard','convocatorias','postulantes','notificaciones','historial'],
-  'Comunicación': ['dashboard','blog','perfil','catalogos']
+  'Curador': ['dashboard','postulantes','notificaciones','curaduria','catalogos','recorrido','historial','valorar'],
+  'Museógrafo': ['dashboard','recorrido','catalogos','valorar'],
+  'Administrativo': ['dashboard','convocatorias','postulantes','notificaciones','historial','valorar'],
+  'Comunicación': ['dashboard','blog','perfil','catalogos','valorar']
 };
 
 function generarCodigoAcceso(seed){
