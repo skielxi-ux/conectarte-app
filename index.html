@@ -2911,6 +2911,7 @@ async function subirPortadaMuseo(input){
     museoPerfil.portada = await comprimirImagen(archivo, 1200, 0.72);
     renderPerfilPublico();
     guardarEstado();
+    sincronizarMuseoPublico();
     toast('Portada actualizada');
   }catch(e){
     console.error('Error procesando la portada:', e);
@@ -2922,6 +2923,7 @@ function quitarPortadaMuseo(){
   museoPerfil.portada = null;
   renderPerfilPublico();
   guardarEstado();
+  sincronizarMuseoPublico();
   toast('Portada eliminada');
 }
 
@@ -3017,6 +3019,34 @@ function guardarPerfilPublico(){
   toast('Perfil actualizado');
   renderPerfilPreview();
   guardarEstado();
+  sincronizarMuseoPublico();
+}
+
+// Publica una versión resumida y pública del perfil del museo (nombre,
+// ciudad, tipo, especialidades, bio, contacto, staff) para que aparezca en
+// el directorio "Museos" de la landing. No publica emails de equipo ni
+// códigos de invitación de jurados — sólo nombre y rol de cada persona.
+async function sincronizarMuseoPublico(){
+  if(usuarioActualRol!=='museo' || !usuarioActualUid) return;
+  if(!museoPerfil.nombre || !museoPerfil.nombre.trim()) return;
+  try{
+    await conReintentoDeAuth(() => db.collection('museosPublicos').doc(usuarioActualUid).set({
+      nombre: museoPerfil.nombre,
+      ciudad: museoPerfil.ciudad || '',
+      tipo: museoPerfil.tipo || '',
+      fundacion: museoPerfil.fundacion || null,
+      especialidades: museoPerfil.especialidades || [],
+      bio: museoPerfil.bio || '',
+      direccion: museoPerfil.direccion || '',
+      telefono: museoPerfil.telefono || '',
+      whatsapp: museoPerfil.whatsapp || '',
+      portada: museoPerfil.portada || (museoPerfil.fotos && museoPerfil.fotos[0] ? museoPerfil.fotos[0].url : null),
+      staff: (equipoMuseo||[]).map(m=>({nombre:m.nombre, cargo:m.rol})),
+      actualizado: new Date().toISOString()
+    }));
+  }catch(e){
+    console.error('No se pudo publicar el perfil público del museo:', e);
+  }
 }
 
 function verVidrieraPublica(){
@@ -3214,6 +3244,7 @@ function guardarMiembro(id){
   toast(id ? 'Permisos actualizados' : 'Miembro invitado');
   renderEquipo();
   guardarEstado();
+  sincronizarMuseoPublico();
 }
 
 function eliminarMiembro(id){
@@ -3222,6 +3253,7 @@ function eliminarMiembro(id){
   toast('Miembro eliminado del equipo');
   renderEquipo();
   guardarEstado();
+  sincronizarMuseoPublico();
 }
 
 function copiarCodigoJurado(codigo){
@@ -4581,12 +4613,13 @@ function datosInstitucionPublica(inst){
   };
 }
 
-function renderInstituciones(){
-  const tipos = [...new Set(INSTITUCIONES_RED.map(i=>i.tipo))];
+async function renderInstituciones(){
+  await cargarMuseosPublicos();
+  const tipos = [...new Set(museosPublicosCache.map(i=>i.tipo).filter(Boolean))];
 
   document.getElementById('artista-view-instituciones').innerHTML = `
     <div class="main-head">
-      <div><h1>Instituciones adheridas</h1><p class="sub">${INSTITUCIONES_RED.length} museos y galerías forman parte de la red</p></div>
+      <div><h1>Instituciones adheridas</h1><p class="sub">${museosPublicosCache.length} museos y galerías forman parte de la red</p></div>
     </div>
 
     <div class="card" style="margin-bottom:16px;">
@@ -4630,12 +4663,16 @@ function renderInstitucionesGrid(){
   const wrap = document.getElementById('inst-grid-wrap');
   if(!wrap) return;
   const q = institucionesFiltro.query.trim().toLowerCase();
-  const filtradas = INSTITUCIONES_RED.filter(i=>{
+  const filtradas = museosPublicosCache.filter(i=>{
     if(q && !i.nombre.toLowerCase().includes(q)) return false;
     if(institucionesFiltro.tipo && i.tipo!==institucionesFiltro.tipo) return false;
     return true;
   });
 
+  if(!museosPublicosCache.length){
+    wrap.innerHTML = `<div class="card"><div class="empty-row">Todavía no hay museos con perfil público cargado en la red</div></div>`;
+    return;
+  }
   if(!filtradas.length){
     wrap.innerHTML = `<div class="card"><div class="empty-row">Ninguna institución coincide con la búsqueda</div></div>`;
     return;
@@ -4643,56 +4680,53 @@ function renderInstitucionesGrid(){
 
   wrap.innerHTML = `
     <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:16px;">
-      ${filtradas.map((base)=>{
-        const inst = datosInstitucionPublica(base);
+      ${filtradas.map((inst)=>{
         const activas = convocatoriasActivasDe(inst.nombre);
         return `
         <div class="card" style="padding:0; overflow:hidden;">
-          <div style="height:90px; position:relative;">
-            <img src="${institucionPhotoUrlFor(inst.id)}" alt="${escapeHtml(inst.nombre)}" style="width:100%; height:100%; object-fit:cover; display:block;">
+          <div style="height:90px; position:relative; ${institucionCoverStyle(inst)}">
             <div style="position:absolute; top:10px; left:10px; width:34px; height:34px; border-radius:9px; background:rgba(20,20,20,0.55); backdrop-filter:blur(2px); display:flex; align-items:center; justify-content:center; color:#fff; font-size:14px;">
               <i class="fa-solid fa-building-columns"></i>
             </div>
           </div>
           <div style="padding:16px;">
-            <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:8px; margin-bottom:6px;">
-              <strong style="font-size:14.5px; line-height:1.3;">${escapeHtml(inst.nombre)}</strong>
-              ${inst.esCuentaDemo ? `<span class="pill pill-sage" style="flex-shrink:0;">Demo</span>` : ''}
-            </div>
-            <p class="text-dim" style="font-size:12px; margin:0 0 10px;"><i class="fa-solid fa-location-dot"></i> ${escapeHtml(inst.ciudad)} · ${escapeHtml(inst.tipo)}</p>
+            <strong style="font-size:14.5px; line-height:1.3;">${escapeHtml(inst.nombre)}</strong>
+            <p class="text-dim" style="font-size:12px; margin:6px 0 10px;"><i class="fa-solid fa-location-dot"></i> ${escapeHtml(inst.ciudad||'—')} · ${escapeHtml(inst.tipo||'—')}</p>
             <div style="display:flex; flex-wrap:wrap; gap:5px; margin-bottom:12px;">
-              ${inst.especialidades.map(e=>`<span class="pill">${escapeHtml(e)}</span>`).join('')}
+              ${(inst.especialidades||[]).map(e=>`<span class="pill">${escapeHtml(e)}</span>`).join('')}
             </div>
             <div style="display:flex; align-items:center; justify-content:space-between;">
               <span class="text-dim" style="font-size:12px;"><strong style="color:var(--ink);">${activas}</strong> convocatoria(s) activa(s)</span>
-              <button class="btn btn-sm" onclick="verPerfilInstitucion('${inst.id}')">Ver perfil</button>
+              <button class="btn btn-sm" onclick="verPerfilInstitucion('${inst.uid}')">Ver perfil</button>
             </div>
           </div>
         </div>`;
       }).join('')}
     </div>
-    <p class="text-dim" style="font-size:12px; margin-top:14px;">${filtradas.length} de ${INSTITUCIONES_RED.length} institución(es)</p>
+    <p class="text-dim" style="font-size:12px; margin-top:14px;">${filtradas.length} de ${museosPublicosCache.length} institución(es)</p>
   `;
 }
 
-function verPerfilInstitucion(id){
-  const base = INSTITUCIONES_RED.find(i=>i.id===id);
-  if(!base) return;
-  const inst = datosInstitucionPublica(base);
+function verPerfilInstitucion(uid){
+  const inst = museosPublicosCache.find(i=>i.uid===uid);
+  if(!inst) return;
   const activas = convocatoriasActivasDe(inst.nombre);
-  const bio = inst.bio;
 
   const body = `
     <div class="grid grid-cols-2 gap-4 mb-2">
-      <div><p class="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">Ciudad</p><p class="text-sm text-gray-800">${escapeHtml(inst.ciudad)}</p></div>
-      <div><p class="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">Tipo</p><p class="text-sm text-gray-800">${escapeHtml(inst.tipo)}</p></div>
+      <div><p class="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">Ciudad</p><p class="text-sm text-gray-800">${escapeHtml(inst.ciudad||'—')}</p></div>
+      <div><p class="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">Tipo</p><p class="text-sm text-gray-800">${escapeHtml(inst.tipo||'—')}</p></div>
     </div>
-    <p class="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1 mt-3">Sobre la institución</p>
-    <p class="text-sm text-gray-700 leading-relaxed mb-4">${escapeHtml(bio)}</p>
-    <p class="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Especialidades</p>
-    <div class="flex flex-wrap gap-1.5 mb-4">
-      ${inst.especialidades.map(e=>`<span class="inline-block text-xs font-bold px-2.5 py-1 rounded-full" style="background:#C1573A14; color:#A3452A;">${escapeHtml(e)}</span>`).join('')}
-    </div>
+    ${inst.bio ? `
+      <p class="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1 mt-3">Sobre la institución</p>
+      <p class="text-sm text-gray-700 leading-relaxed mb-4">${escapeHtml(inst.bio)}</p>
+    ` : ''}
+    ${inst.especialidades && inst.especialidades.length ? `
+      <p class="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Especialidades</p>
+      <div class="flex flex-wrap gap-1.5 mb-4">
+        ${inst.especialidades.map(e=>`<span class="inline-block text-xs font-bold px-2.5 py-1 rounded-full" style="background:#C1573A14; color:#A3452A;">${escapeHtml(e)}</span>`).join('')}
+      </div>
+    ` : ''}
 
     ${inst.direccion || inst.telefono ? `
       <p class="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2 mt-5 pt-4 border-t border-gray-100">Contacto</p>
@@ -4911,25 +4945,49 @@ function renderMensajesArtista(){
 /* =====================================================================
    LANDING PÚBLICA — grilla de instituciones adheridas
    ===================================================================== */
-function renderInstitucionesLanding(){
+let museosPublicosCache = [];
+let museosPublicosCargados = false;
+
+async function cargarMuseosPublicos(forzar){
+  if(museosPublicosCargados && !forzar) return;
+  try{
+    const qs = await db.collection('museosPublicos').orderBy('actualizado','desc').get();
+    museosPublicosCache = qs.docs.map(d=>({uid:d.id, ...d.data()}));
+  }catch(e){
+    console.error('No se pudo cargar el directorio de museos:', e);
+    museosPublicosCache = [];
+  }
+  museosPublicosCargados = true;
+}
+
+function institucionCoverStyle(inst){
+  return inst.portada
+    ? `background:url('${inst.portada}') center/cover;`
+    : `background:linear-gradient(135deg,#C1573A,#5B4636);`;
+}
+
+async function renderInstitucionesLanding(){
   const grid = document.getElementById('landing-inst-grid');
   if(!grid) return;
-  grid.innerHTML = INSTITUCIONES_RED.map(base=>{
-    const inst = datosInstitucionPublica(base);
+  await cargarMuseosPublicos();
+  if(!museosPublicosCache.length){
+    grid.innerHTML = `<p class="text-sm text-gray-400 col-span-full text-center py-8">Todavía no hay museos con perfil público cargado en la red.</p>`;
+    return;
+  }
+  grid.innerHTML = museosPublicosCache.map(inst=>{
     const activas = convocatoriasActivasDe(inst.nombre);
     return `
-      <div style="border:1px solid #ECEAE4; border-radius:10px; overflow:hidden; background:#fff; cursor:pointer;" onclick="verPerfilInstitucion('${base.id}')">
-        <div style="height:110px; position:relative;">
-          <img src="${institucionPhotoUrlFor(inst.id)}" alt="${escapeHtml(inst.nombre)}" style="width:100%; height:100%; object-fit:cover; display:block;">
+      <div style="border:1px solid #ECEAE4; border-radius:10px; overflow:hidden; background:#fff; cursor:pointer;" onclick="verPerfilInstitucion('${inst.uid}')">
+        <div style="height:110px; position:relative; ${institucionCoverStyle(inst)}">
           <div style="position:absolute; top:10px; left:10px; width:30px; height:30px; border-radius:8px; background:rgba(20,20,20,0.55); backdrop-filter:blur(2px); display:flex; align-items:center; justify-content:center; color:#fff; font-size:13px;">
             <i class="fa-solid fa-building-columns"></i>
           </div>
         </div>
         <div style="padding:16px;">
           <strong style="font-size:14px; color:#141414;">${escapeHtml(inst.nombre)}</strong>
-          <p style="font-size:12px; color:#8a8a82; margin:5px 0 10px;"><i class="fa-solid fa-location-dot"></i> ${escapeHtml(inst.ciudad)} · ${escapeHtml(inst.tipo)}</p>
+          <p style="font-size:12px; color:#8a8a82; margin:5px 0 10px;"><i class="fa-solid fa-location-dot"></i> ${escapeHtml(inst.ciudad||'—')} · ${escapeHtml(inst.tipo||'—')}</p>
           <div style="display:flex; flex-wrap:wrap; gap:5px; margin-bottom:10px;">
-            ${inst.especialidades.slice(0,3).map(e=>`<span style="font-size:11px; font-weight:600; padding:3px 9px; border-radius:20px; background:#F4F3EF; color:#4a4a45;">${escapeHtml(e)}</span>`).join('')}
+            ${(inst.especialidades||[]).slice(0,3).map(e=>`<span style="font-size:11px; font-weight:600; padding:3px 9px; border-radius:20px; background:#F4F3EF; color:#4a4a45;">${escapeHtml(e)}</span>`).join('')}
           </div>
           <span style="font-size:11.5px; color:#8a8a82;">${activas} convocatoria(s) activa(s)</span>
         </div>
@@ -5230,6 +5288,7 @@ async function abrirBusquedaLanding(){
     </div>
   `);
   await cargarArtistasPublicos();
+  await cargarMuseosPublicos();
   onLandingSearchInput();
 }
 
@@ -5239,7 +5298,7 @@ function onLandingSearchInput(){
   if(!wrap) return;
 
   const artistas = artistasPublicosCache.filter(a => !q || a.nombre.toLowerCase().includes(q) || (a.disciplina||'').toLowerCase().includes(q) || (a.ciudad||'').toLowerCase().includes(q));
-  const instituciones = INSTITUCIONES_RED.filter(i => !q || i.nombre.toLowerCase().includes(q) || i.ciudad.toLowerCase().includes(q) || i.tipo.toLowerCase().includes(q));
+  const instituciones = museosPublicosCache.filter(i => !q || i.nombre.toLowerCase().includes(q) || (i.ciudad||'').toLowerCase().includes(q) || (i.tipo||'').toLowerCase().includes(q));
 
   if(!artistas.length && !instituciones.length){
     wrap.innerHTML = `<p class="text-sm text-gray-400 text-center py-8">Sin resultados para "${escapeHtml(q)}"</p>`;
@@ -5264,9 +5323,9 @@ function onLandingSearchInput(){
       <div class="flex items-center justify-between gap-3 px-2 py-2.5 rounded-lg hover:bg-gray-50">
         <div class="flex items-center gap-3 min-w-0">
           <div class="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center text-gray-400 flex-shrink-0"><i class="fa-solid fa-building-columns"></i></div>
-          <div class="min-w-0"><strong class="block text-sm text-gray-900 truncate">${escapeHtml(i.nombre)}</strong><span class="text-xs text-gray-400">${escapeHtml(i.tipo)} · ${escapeHtml(i.ciudad)}</span></div>
+          <div class="min-w-0"><strong class="block text-sm text-gray-900 truncate">${escapeHtml(i.nombre)}</strong><span class="text-xs text-gray-400">${escapeHtml(i.tipo||'—')} · ${escapeHtml(i.ciudad||'—')}</span></div>
         </div>
-        <button onclick="closeModal(); verPerfilInstitucion('${i.id}')" class="flex-shrink-0 text-xs font-bold px-3 py-1.5 rounded-lg text-white" style="background:#141414;">Ver perfil</button>
+        <button onclick="closeModal(); verPerfilInstitucion('${i.uid}')" class="flex-shrink-0 text-xs font-bold px-3 py-1.5 rounded-lg text-white" style="background:#141414;">Ver perfil</button>
       </div>`).join('');
   }
   wrap.innerHTML = html;
