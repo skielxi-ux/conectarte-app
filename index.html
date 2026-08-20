@@ -4110,6 +4110,7 @@ function guardarPerfilArtista(){
   const avatarA = document.getElementById('sidebar-avatar-artista');
   if(avatarA) avatarA.src = avatarUrl(artistaPerfil.nombre || 'Completá tu nombre');
   guardarEstado();
+  sincronizarArtistaPublico();
 }
 
 let obraFotoTemp = null;
@@ -4183,6 +4184,7 @@ function guardarObra(id){
   toast(id ? 'Obra actualizada' : 'Obra agregada al catálogo');
   renderPortfolioArtista();
   guardarEstado();
+  sincronizarArtistaPublico();
 }
 
 function eliminarObra(id){
@@ -4190,6 +4192,32 @@ function eliminarObra(id){
   toast('Obra eliminada del catálogo');
   renderPortfolioArtista();
   guardarEstado();
+  sincronizarArtistaPublico();
+}
+
+// Publica una versión resumida y pública del perfil del artista (nombre,
+// disciplina, ciudad, foto, hasta 3 obras destacadas) para que aparezca en
+// el directorio "Artistas de la red" de la landing. No publica datos
+// sensibles (email, DNI, celular quedan privados). Si el perfil todavía no
+// tiene nombre cargado, no publicamos nada (evita perfiles vacíos en el listado).
+async function sincronizarArtistaPublico(){
+  if(usuarioActualRol!=='artista' || !usuarioActualUid) return;
+  if(!artistaPerfil.nombre || !artistaPerfil.nombre.trim()) return;
+  const obrasDestacadas = obrasArtista.slice(0,3).map(o=>({titulo:o.titulo, fotoUrl:o.fotoUrl||null}));
+  try{
+    await conReintentoDeAuth(() => db.collection('artistasPublicos').doc(usuarioActualUid).set({
+      nombre: artistaPerfil.nombre,
+      disciplina: artistaPerfil.disciplinaPrincipal || '',
+      ciudad: artistaPerfil.ciudad || '',
+      fotoUrl: artistaPerfil.fotoUrl || null,
+      bio: artistaPerfil.bio || '',
+      obrasDestacadas,
+      totalObras: obrasArtista.length,
+      actualizado: new Date().toISOString()
+    }));
+  }catch(e){
+    console.error('No se pudo publicar el perfil público del artista:', e);
+  }
 }
 
 function verFichaObra(id){
@@ -5071,13 +5099,20 @@ function verPostBlogPublico(id){
 }
 
 /* ---------- Página: Artistas de la red ---------- */
-const ARTISTAS_RED = [
-  {nombre:'Lucas Reyes', disciplina:'Pintura', ciudad:'San Miguel de Tucumán'},
-  {nombre:'Agustina Núñez', disciplina:'Escultura', ciudad:'San Miguel de Tucumán'},
-  {nombre:'Florencia Sosa', disciplina:'Fotografía', ciudad:'Salta'},
-  {nombre:'Martín Ibarra', disciplina:'Arte digital', ciudad:'Córdoba'},
-  {nombre:'Carla Domínguez', disciplina:'Arte textil', ciudad:'Mendoza'}
-];
+let artistasPublicosCache = [];
+let artistasPublicosCargados = false;
+
+async function cargarArtistasPublicos(forzar){
+  if(artistasPublicosCargados && !forzar) return;
+  try{
+    const qs = await db.collection('artistasPublicos').orderBy('actualizado','desc').get();
+    artistasPublicosCache = qs.docs.map(d=>({uid:d.id, ...d.data()}));
+  }catch(e){
+    console.error('No se pudo cargar el directorio de artistas:', e);
+    artistasPublicosCache = [];
+  }
+  artistasPublicosCargados = true;
+}
 
 let artistasSearchQuery = '';
 
@@ -5090,44 +5125,84 @@ function renderArtistasPage(){
   const grid = document.getElementById('artistas-grid');
   if(!grid) return;
   const q = artistasSearchQuery.trim().toLowerCase();
-  const filtrados = ARTISTAS_RED.filter(a =>
-    !q || a.nombre.toLowerCase().includes(q) || a.disciplina.toLowerCase().includes(q) || a.ciudad.toLowerCase().includes(q)
+  const filtrados = artistasPublicosCache.filter(a =>
+    !q || a.nombre.toLowerCase().includes(q) || (a.disciplina||'').toLowerCase().includes(q) || (a.ciudad||'').toLowerCase().includes(q)
   );
 
+  if(!artistasPublicosCache.length){
+    grid.innerHTML = `<p class="text-sm text-gray-400 col-span-full text-center py-10">Todavía no hay artistas con perfil público cargado en la red.</p>`;
+    return;
+  }
   if(!filtrados.length){
     grid.innerHTML = `<p class="text-sm text-gray-400 col-span-full text-center py-10">Ningún artista coincide con "${escapeHtml(artistasSearchQuery)}"</p>`;
     return;
   }
 
-  grid.innerHTML = filtrados.map(a=>{
-    const esReal = a.nombre===artistaPerfil.nombre;
-    const cantidadObras = esReal ? obrasArtista.length : (seedHash(a.nombre) % 4) + 2;
-    return `
+  grid.innerHTML = filtrados.map(a=>`
       <div class="rounded-2xl border border-gray-100 shadow-sm p-6 bg-white flex flex-col">
         <div class="flex items-center gap-3 mb-4">
-          <img src="${avatarUrl(a.nombre)}" alt="${escapeHtml(a.nombre)}" class="w-14 h-14 rounded-full bg-gray-100 flex-shrink-0">
+          <img src="${a.fotoUrl || avatarUrl(a.nombre)}" alt="${escapeHtml(a.nombre)}" class="w-14 h-14 rounded-full bg-gray-100 flex-shrink-0" style="object-fit:cover;">
           <div>
-            <strong class="block text-[15px] text-gray-900">${escapeHtml(a.nombre)}${esReal ? ' <span class=\'text-[10px] font-bold uppercase tracking-wide text-white bg-[#B5502E] px-2 py-0.5 rounded-full ml-1\'>Demo</span>' : ''}</strong>
-            <span class="text-xs text-gray-400"><i class="fa-solid fa-location-dot"></i> ${escapeHtml(a.ciudad)}</span>
+            <strong class="block text-[15px] text-gray-900">${escapeHtml(a.nombre)}</strong>
+            <span class="text-xs text-gray-400"><i class="fa-solid fa-location-dot"></i> ${escapeHtml(a.ciudad||'—')}</span>
           </div>
         </div>
-        <span class="inline-block w-fit text-[11px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-full mb-4" style="background:#C1573A14; color:#A3452A;">${escapeHtml(a.disciplina)}</span>
-        <p class="text-xs text-gray-400 mb-5">${cantidadObras} obra(s) cargadas en su catálogo</p>
-        <button onclick="verPortfolio('${escJs(a.nombre)}','${escJs(a.disciplina)}')" class="mt-auto w-full py-2.5 rounded-lg text-white text-sm font-bold hover:opacity-90 transition" style="background:#B5502E;"><i class="fa-solid fa-id-card mr-1.5"></i> Ver portfolio</button>
-      </div>`;
-  }).join('');
+        ${a.disciplina ? `<span class="inline-block w-fit text-[11px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-full mb-4" style="background:#C1573A14; color:#A3452A;">${escapeHtml(a.disciplina)}</span>` : ''}
+        <p class="text-xs text-gray-400 mb-5">${a.totalObras||0} obra(s) cargadas en su catálogo</p>
+        <button onclick="verPerfilArtistaPublico('${a.uid}')" class="mt-auto w-full py-2.5 rounded-lg text-white text-sm font-bold hover:opacity-90 transition" style="background:#B5502E;"><i class="fa-solid fa-id-card mr-1.5"></i> Ver portfolio</button>
+      </div>`
+  ).join('');
 }
 
-function abrirArtistasPage(){
+async function abrirArtistasPage(){
   document.getElementById('landing-root').classList.add('hidden');
   document.getElementById('artistas-page').classList.remove('hidden');
-  renderArtistasPage();
   window.scrollTo(0,0);
+  const grid = document.getElementById('artistas-grid');
+  if(grid) grid.innerHTML = `<p class="text-sm text-gray-400 col-span-full text-center py-10">Cargando artistas…</p>`;
+  await cargarArtistasPublicos(true);
+  renderArtistasPage();
 }
 function cerrarArtistasPage(){
   document.getElementById('artistas-page').classList.add('hidden');
   document.getElementById('landing-root').classList.remove('hidden');
   window.scrollTo(0,0);
+}
+
+// Ficha pública real de un artista (a partir del directorio, sin exponer sus
+// datos privados: sólo lo que el propio artista publicó).
+function verPerfilArtistaPublico(uid){
+  const a = artistasPublicosCache.find(x=>x.uid===uid);
+  if(!a) return;
+  const body = `
+    <div class="flex items-center gap-4 mb-5">
+      <img src="${a.fotoUrl || avatarUrl(a.nombre)}" alt="${escapeHtml(a.nombre)}" class="w-16 h-16 rounded-full flex-shrink-0" style="background:#F1EFE9; object-fit:cover;">
+      <div>
+        <p class="font-black text-gray-900 text-lg leading-tight">${escapeHtml(a.nombre)}</p>
+        ${a.disciplina ? `<span class="inline-block mt-1 text-[11px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full" style="background:#C1573A14; color:#A3452A;">${escapeHtml(a.disciplina)}</span>` : ''}
+        <p class="text-xs text-gray-400 mt-1"><i class="fa-solid fa-location-dot"></i> ${escapeHtml(a.ciudad||'—')}</p>
+      </div>
+    </div>
+    ${a.bio ? `<p class="text-sm text-gray-700 leading-relaxed mb-5">${escapeHtml(a.bio)}</p>` : ''}
+    ${a.obrasDestacadas && a.obrasDestacadas.length ? `
+      <p class="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Obras destacadas</p>
+      <div class="grid grid-cols-3 gap-2 mb-2">
+        ${a.obrasDestacadas.map(o=>`
+          <div>
+            <div style="height:80px; border-radius:8px; overflow:hidden; background:#F1EFE9;">
+              ${o.fotoUrl ? `<img src="${o.fotoUrl}" style="width:100%;height:100%;object-fit:cover;">` : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#C4C0B6;"><i class="fa-solid fa-image"></i></div>`}
+            </div>
+            <p class="text-[11px] text-gray-500 mt-1 truncate">${escapeHtml(o.titulo)}</p>
+          </div>
+        `).join('')}
+      </div>
+    ` : `<p class="text-sm text-gray-400 mb-2">Todavía no cargó obras destacadas.</p>`}
+    <p class="text-xs text-gray-400 mt-4"><i class="fa-solid fa-circle-info"></i> Este es el perfil público que el artista decidió compartir. Para ver su catálogo completo y postularlo a una convocatoria, contactalo a través de una postulación real.</p>
+    <div class="flex justify-end gap-3 mt-6">
+      <button class="px-4 py-2.5 text-sm font-semibold text-gray-500 hover:text-gray-700 transition" onclick="closeModal()">Cerrar</button>
+    </div>
+  `;
+  openModal(tw_modalShell('Artista', escapeHtml(a.nombre), 'Perfil público de la red conectARTE.', body, true));
 }
 
 /* ---------- Menú de cuenta (navbar) ---------- */
@@ -5144,7 +5219,7 @@ document.addEventListener('click', (e)=>{
 });
 
 /* ---------- Buscador de la landing (artistas + instituciones) ---------- */
-function abrirBusquedaLanding(){
+async function abrirBusquedaLanding(){
   openModal(`
     <div class="w-full max-w-lg bg-white rounded-2xl shadow-2xl p-6" style="font-family:'Inter',sans-serif;" onclick="event.stopPropagation()">
       <div class="relative mb-4">
@@ -5154,6 +5229,7 @@ function abrirBusquedaLanding(){
       <div id="landing-search-results" class="max-h-96 overflow-y-auto space-y-1"></div>
     </div>
   `);
+  await cargarArtistasPublicos();
   onLandingSearchInput();
 }
 
@@ -5162,7 +5238,7 @@ function onLandingSearchInput(){
   const wrap = document.getElementById('landing-search-results');
   if(!wrap) return;
 
-  const artistas = ARTISTAS_RED.filter(a => !q || a.nombre.toLowerCase().includes(q) || a.disciplina.toLowerCase().includes(q) || a.ciudad.toLowerCase().includes(q));
+  const artistas = artistasPublicosCache.filter(a => !q || a.nombre.toLowerCase().includes(q) || (a.disciplina||'').toLowerCase().includes(q) || (a.ciudad||'').toLowerCase().includes(q));
   const instituciones = INSTITUCIONES_RED.filter(i => !q || i.nombre.toLowerCase().includes(q) || i.ciudad.toLowerCase().includes(q) || i.tipo.toLowerCase().includes(q));
 
   if(!artistas.length && !instituciones.length){
@@ -5176,10 +5252,10 @@ function onLandingSearchInput(){
     html += artistas.map(a=>`
       <div class="flex items-center justify-between gap-3 px-2 py-2.5 rounded-lg hover:bg-gray-50">
         <div class="flex items-center gap-3 min-w-0">
-          <img src="${avatarUrl(a.nombre)}" class="w-9 h-9 rounded-full bg-gray-100 flex-shrink-0">
-          <div class="min-w-0"><strong class="block text-sm text-gray-900 truncate">${escapeHtml(a.nombre)}</strong><span class="text-xs text-gray-400">${escapeHtml(a.disciplina)} · ${escapeHtml(a.ciudad)}</span></div>
+          <img src="${a.fotoUrl || avatarUrl(a.nombre)}" class="w-9 h-9 rounded-full bg-gray-100 flex-shrink-0" style="object-fit:cover;">
+          <div class="min-w-0"><strong class="block text-sm text-gray-900 truncate">${escapeHtml(a.nombre)}</strong><span class="text-xs text-gray-400">${escapeHtml(a.disciplina||'—')} · ${escapeHtml(a.ciudad||'—')}</span></div>
         </div>
-        <button onclick="closeModal(); verPortfolio('${escJs(a.nombre)}','${escJs(a.disciplina)}')" class="flex-shrink-0 text-xs font-bold px-3 py-1.5 rounded-lg text-white" style="background:#B5502E;">Ver portfolio</button>
+        <button onclick="closeModal(); verPerfilArtistaPublico('${a.uid}')" class="flex-shrink-0 text-xs font-bold px-3 py-1.5 rounded-lg text-white" style="background:#B5502E;">Ver portfolio</button>
       </div>`).join('');
   }
   if(instituciones.length){
