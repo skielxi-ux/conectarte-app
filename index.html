@@ -666,15 +666,12 @@ async function guardarEstado(){
 
 // Datos públicos: se cargan siempre al abrir la página (sin necesidad de login),
 // para que la landing muestre convocatorias / instituciones / blog reales.
+let globalListenerActivo = false;
+
 async function cargarEstadoGlobal(){
   try{
     const snap = await GLOBAL_DOC.get();
-    if(snap.exists){
-      const data = snap.data();
-      if(data.convocatorias) convocatorias = data.convocatorias;
-      if(data.conversaciones) conversaciones = data.conversaciones;
-      if(data.blogPosts) blogPosts = data.blogPosts;
-    } else {
+    if(!snap.exists){
       // Primera vez que corre la app contra este proyecto de Firebase:
       // arrancamos en blanco, sin las convocatorias/blog de ejemplo de la demo.
       convocatorias = [];
@@ -686,9 +683,39 @@ async function cargarEstadoGlobal(){
     console.error('No se pudo cargar el estado global desde Firebase:', e);
   }
   datosGlobalesCargados = true;
-  if(typeof renderInstitucionesLanding === 'function') renderInstitucionesLanding();
-  if(typeof renderBlogLanding === 'function') renderBlogLanding();
-  if(typeof renderConvocatoriasLanding === 'function') renderConvocatoriasLanding();
+  iniciarListenerGlobal();
+}
+
+// Escucha cambios en vivo de los datos compartidos (convocatorias, postulaciones,
+// blog, conversaciones) para que museos y artistas se vean actualizados entre sí
+// sin necesidad de recargar la página.
+function iniciarListenerGlobal(){
+  if(globalListenerActivo) return;
+  globalListenerActivo = true;
+  GLOBAL_DOC.onSnapshot(snap=>{
+    if(!snap.exists) return;
+    const data = snap.data();
+    if(data.convocatorias) convocatorias = data.convocatorias;
+    if(data.conversaciones) conversaciones = data.conversaciones;
+    if(data.blogPosts) blogPosts = data.blogPosts;
+    refrescarVistasCompartidas();
+  }, err=>{
+    console.error('Se cortó la sincronización en vivo de los datos compartidos:', err);
+  });
+}
+
+// Vuelve a pintar cualquier pantalla (de museo, artista o landing) que dependa de
+// datos compartidos. Se llama tanto al cargar la página como cada vez que llega
+// una actualización en vivo. Cada función ya sabe si su contenedor está en pantalla.
+function refrescarVistasCompartidas(){
+  [
+    renderInstitucionesLanding, renderBlogLanding, renderConvocatoriasLanding,
+    renderMuseoDashboard, renderConvTable, renderPostulantesGlobal,
+    renderCuraduria, renderCuraduriaTabla, renderCatalogos, renderBlogTabla,
+    renderArtistaDashboard, renderDisponibles, renderMisPostulaciones, renderNotificaciones
+  ].forEach(fn=>{
+    try{ if(typeof fn==='function') fn(); }catch(e){ /* la pantalla no está activa ahora mismo */ }
+  });
 }
 
 // Punto de partida en blanco para una cuenta nueva (no usa los datos de ejemplo de la demo).
