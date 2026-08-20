@@ -576,8 +576,13 @@ let datosGlobalesCargados = false;
 let datosPrivadosCargados = false;
 let juradoMuseoUid = null; // sólo se usa cuando usuarioActualRol==='jurado': a qué museo pertenece
 let miJuradoId = null; // id del jurado en el roster del museo (jurados[].id), sólo para sesiones de jurado
+let reseteandoDemo = false; // true durante resetearDemo(): bloquea cualquier autoguardado que pueda "resucitar" datos recién borrados
 
 async function guardarEstado(){
+  // Si estamos en medio de un reinicio de demo, no guardamos nada: evita que
+  // un listener tardío (ej. visibilitychange al recargar la página) reescriba
+  // en Firebase los datos viejos que todavía están en memoria.
+  if(reseteandoDemo) return;
   // No guardamos nada hasta que sepamos con certeza qué había en Firebase:
   // si guardáramos antes, pisaríamos lo real con los datos de ejemplo que
   // todavía están en memoria mientras se completa la primera carga.
@@ -786,20 +791,47 @@ async function cargarEstadoPrivado(uid, role, email){
 }
 
 async function resetearDemo(){
-  const ok = confirm('Esto borra TODO para volver a probar de cero:\n\n• Tu cuenta actual (perfil, obras, postulaciones, mensajes)\n• Las convocatorias, postulaciones y blog COMPARTIDOS entre todas las cuentas\n\nSi tenés otra cuenta (museo o artista) para probar, repetí esto desde ahí también para dejarla en blanco. No se puede deshacer. ¿Continuar?');
+  const ok = confirm('Esto borra TODO para volver a probar de cero:\n\n• Tu cuenta actual (perfil, equipo, obras, postulaciones, mensajes, jurados, evaluaciones, valoración)\n• Las convocatorias, postulaciones y blog COMPARTIDOS entre todas las cuentas\n\nSi tenés otra cuenta (museo o artista) para probar, repetí esto desde ahí también para dejarla en blanco. No se puede deshacer. ¿Continuar?');
   if(!ok) return;
+
+  // Cortamos primero cualquier cosa que pueda "resucitar" datos borrados
+  // (autoguardado por intervalo, beforeunload, y el guard general de
+  // guardarEstado) antes de tocar Firebase, para que ningún listener
+  // tardío reescriba encima del borrado.
+  reseteandoDemo = true;
+  window.removeEventListener('beforeunload', guardarEstado);
+  if(autosaveIntervalId){ clearInterval(autosaveIntervalId); autosaveIntervalId = null; }
+  if(curaduriaConfigUnsub){ curaduriaConfigUnsub(); curaduriaConfigUnsub = null; curaduriaConfigListenerUid = null; }
+  if(evaluacionesUnsub){ evaluacionesUnsub(); evaluacionesUnsub = null; evaluacionesListenerUid = null; }
+
   try{
     if(usuarioActualUid){
-      await db.collection('usuarios').doc(usuarioActualUid).collection('datos').doc('privado').delete();
+      // Cada borrado va envuelto en su propio try/catch: si uno falla (por
+      // ejemplo por reglas de Firestore desactualizadas), no debe frenar
+      // a los demás, especialmente el borrado del documento global de abajo.
+      const borrar = async (p, label) => {
+        try{ await p(); }catch(e){ console.error(`No se pudo borrar ${label} al reiniciar:`, e); }
+      };
+      await borrar(() => db.collection('usuarios').doc(usuarioActualUid).collection('datos').doc('privado').delete(), 'datos privados');
+      await borrar(() => db.collection('usuarios').doc(usuarioActualUid).collection('curaduriaConfig').doc('config').delete(), 'curaduría (jurados/rúbrica)');
+      await borrar(() => db.collection('testimonios').doc(usuarioActualUid).delete(), 'testimonio');
+      await borrar(() => db.collection('museosPublicos').doc(usuarioActualUid).delete(), 'perfil público de museo');
+      await borrar(() => db.collection('artistasPublicos').doc(usuarioActualUid).delete(), 'perfil público de artista');
+
+      await borrar(async () => {
+        const evalsSnap = await db.collection('usuarios').doc(usuarioActualUid).collection('evaluaciones').get();
+        await Promise.all(evalsSnap.docs.map(d=>d.ref.delete()));
+      }, 'evaluaciones de jurado');
+
+      await borrar(async () => {
+        const invitesSnap = await db.collection('invitacionesJurado').where('museoUid','==',usuarioActualUid).get();
+        await Promise.all(invitesSnap.docs.map(d=>d.ref.delete()));
+      }, 'invitaciones de jurado');
     }
     await GLOBAL_DOC.delete();
   }catch(e){
     console.error('Error al reiniciar los datos:', e);
   }
-  // Evitamos que un autoguardado de último momento (disparado por la recarga)
-  // reescriba en Firebase los datos viejos que todavía están en memoria.
-  window.removeEventListener('beforeunload', guardarEstado);
-  if(autosaveIntervalId){ clearInterval(autosaveIntervalId); autosaveIntervalId = null; }
   convocatorias = []; conversaciones = []; blogPosts = [];
   location.reload();
 }
