@@ -958,6 +958,7 @@ function renderLoginModal(role){
       <div class="mb-6">
         <label class="block text-sm font-bold text-gray-800 mb-1.5">Contraseña</label>
         <input id="login-pass" type="password" class="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 transition" style="--tw-ring-color:#C1573A66;" placeholder="••••••••" onkeydown="if(event.key==='Enter') submitAuth('${role}')">
+        ${!esRegistro ? `<p class="text-right mt-1.5"><a href="#" onclick="event.preventDefault(); recuperarContrasena()" class="text-xs font-semibold" style="color:#B5502E;">¿Olvidaste tu contraseña?</a></p>` : ''}
       </div>
 
       <button id="auth-submit-btn" onclick="submitAuth('${role}')" class="w-full rounded-xl py-3.5 font-bold text-white text-[15px] transition hover:opacity-90" style="background:#B5502E;">
@@ -969,6 +970,23 @@ function renderLoginModal(role){
       </p>
     </div>
   `);
+}
+
+async function recuperarContrasena(){
+  const emailInput = document.getElementById('login-user');
+  let email = emailInput ? emailInput.value.trim() : '';
+  if(!email){
+    email = (prompt('Ingresá el email de tu cuenta para enviarte el link de recuperación:') || '').trim();
+    if(!email) return;
+  }
+  try{
+    await auth.sendPasswordResetEmail(email);
+    mostrarErrorAuth(`Te enviamos un email a ${email} con un link para elegir una contraseña nueva. Revisá también la carpeta de spam.`);
+    const errorEl = document.getElementById('auth-error');
+    if(errorEl){ errorEl.classList.remove('bg-red-50','border-red-200','text-red-600'); errorEl.classList.add('bg-green-50','border-green-200','text-green-700'); }
+  }catch(e){
+    mostrarErrorAuth(traducirErrorFirebase(e));
+  }
 }
 
 let pendingPostularConvId = null;
@@ -3298,6 +3316,7 @@ function renderJuradoAuthModal(){
       <div class="mb-6">
         <label class="block text-sm font-bold text-gray-800 mb-1.5">Contraseña</label>
         <input id="jurado-pass" type="password" class="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2" style="--tw-ring-color:#C1573A66;" placeholder="••••••••" onkeydown="if(event.key==='Enter') submitJuradoAuth()">
+        ${!esRegistro ? `<p class="text-right mt-1.5"><a href="#" onclick="event.preventDefault(); recuperarContrasenaJurado()" class="text-xs font-semibold" style="color:#B5502E;">¿Olvidaste tu contraseña?</a></p>` : ''}
       </div>
 
       <button id="jurado-submit-btn" onclick="submitJuradoAuth()" class="w-full rounded-xl py-3.5 font-bold text-white text-[15px] transition hover:opacity-90" style="background:#B5502E;">
@@ -3316,6 +3335,23 @@ function mostrarErrorJurado(msg){
   if(!el) return;
   el.textContent = msg;
   el.classList.remove('hidden');
+}
+
+async function recuperarContrasenaJurado(){
+  const emailInput = document.getElementById('jurado-email');
+  let email = emailInput ? emailInput.value.trim() : '';
+  if(!email){
+    email = (prompt('Ingresá el email de tu cuenta de jurado para enviarte el link de recuperación:') || '').trim();
+    if(!email) return;
+  }
+  try{
+    await auth.sendPasswordResetEmail(email);
+    mostrarErrorJurado(`Te enviamos un email a ${email} con un link para elegir una contraseña nueva. Revisá también la carpeta de spam.`);
+    const errorEl = document.getElementById('jurado-error');
+    if(errorEl){ errorEl.classList.remove('bg-red-50','border-red-200','text-red-600'); errorEl.classList.add('bg-green-50','border-green-200','text-green-700'); }
+  }catch(e){
+    mostrarErrorJurado(traducirErrorFirebase(e));
+  }
 }
 
 async function submitJuradoAuth(){
