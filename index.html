@@ -780,12 +780,16 @@ async function cargarEstadoPrivado(uid, role, email){
 }
 
 async function resetearDemo(){
-  if(!confirm('¿Reiniciar los datos de esta cuenta? Se borran tus postulaciones, mensajes y obras, y no se puede deshacer.')) return;
+  const ok = confirm('Esto borra TODO para volver a probar de cero:\n\n• Tu cuenta actual (perfil, obras, postulaciones, mensajes)\n• Las convocatorias, postulaciones y blog COMPARTIDOS entre todas las cuentas\n\nSi tenés otra cuenta (museo o artista) para probar, repetí esto desde ahí también para dejarla en blanco. No se puede deshacer. ¿Continuar?');
+  if(!ok) return;
   try{
     if(usuarioActualUid){
       await db.collection('usuarios').doc(usuarioActualUid).collection('datos').doc('privado').delete();
     }
-  }catch(e){}
+    await GLOBAL_DOC.delete();
+  }catch(e){
+    console.error('Error al reiniciar los datos:', e);
+  }
   location.reload();
 }
 
