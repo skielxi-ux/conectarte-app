@@ -2034,10 +2034,26 @@ function renderCuraduriaTabla(){
 function sincronizarPostulacionesArtista(){
   let huboNovedades = false;
   misPostulaciones.forEach(mp=>{
-    if(mp.convId===undefined || mp.postIdx===undefined) return; // postulaciones de ejemplo, sin vínculo real
+    if(mp.convId===undefined) return; // postulaciones de ejemplo, sin vínculo real
+    if(mp.estado==='Eliminada') return; // ya se avisó, no seguimos chequeando
+
     const c = convocatorias.find(x=>x.id===mp.convId);
-    const p = c && c.postulantes ? c.postulantes[mp.postIdx] : null;
-    if(!c || !p) return;
+    // Buscamos por id (forma correcta y estable). Si es una postulación vieja
+    // guardada antes de este arreglo, todavía puede tener solo postIdx.
+    const p = c && c.postulantes
+      ? (mp.postId ? c.postulantes.find(x=>x.id===mp.postId) : c.postulantes[mp.postIdx])
+      : null;
+
+    if(!c || !p){
+      // La convocatoria o la postulación puntual ya no existen: el museo la eliminó.
+      if(mp.estado !== 'Eliminada'){
+        mp.estado = 'Eliminada';
+        notificacionesArtista.unshift({id:uid('n'), tipo:'rechazada', mensaje:`Tu postulación a "${mp.convocatoria}" ya no está disponible — la institución la eliminó del sistema.`, fecha:todayISO(), leida:false});
+        huboNovedades = true;
+      }
+      return;
+    }
+
     if(p.estado !== mp.estado){
       const anterior = mp.estado;
       mp.estado = p.estado;
@@ -3191,7 +3207,7 @@ function renderArtistaDashboard(){
           <thead><tr><th>Convocatoria</th><th>Estado</th></tr></thead>
           <tbody>
             ${misPostulaciones.length? misPostulaciones.map(p=>`
-              <tr><td>${escapeHtml(p.convocatoria)}</td><td><span class="pill ${p.estado==='Aceptada'?'pill-sage':p.estado==='Rechazada'?'pill-red':'pill-amber'}">${escapeHtml(p.estado)}</span></td></tr>
+              <tr><td>${escapeHtml(p.convocatoria)}</td><td><span class="pill ${p.estado==='Aceptada'?'pill-sage':(p.estado==='Rechazada'||p.estado==='Eliminada')?'pill-red':'pill-amber'}">${escapeHtml(p.estado)}</span></td></tr>
             `).join('') : `<tr><td colspan="2" class="empty-row">Todavía no te postulaste a nada</td></tr>`}
           </tbody>
         </table>
@@ -3562,17 +3578,18 @@ function enviarPostulacion(convId){
   Object.assign(artistaPerfil, personales);
 
   const mensaje = document.getElementById('post-mensaje').value.trim();
-  const postIdx = c.postulantes.length;
+  const postId = uid('post');
   const adjunto = file.name;
 
   c.postulantes.push({
+    id: postId,
     nombre: personales.nombre, disciplina: artistaPerfil.disciplinaPrincipal, fecha:todayISO(), estado:'Nuevo',
     mensaje, adjunto, metodo:'file',
     archivoDataUrl: postArchivoDataUrl, archivoTipo: postArchivoTipo, archivoNombre: postArchivoNombre,
     personales, iaUsada: iaSi, iaDetalle: iaSi ? iaDetalle : '',
     obra: obraData
   });
-  const nuevaPostulacion = {id:uid('p'), convocatoria:c.titulo, institucion:c.institucion, fecha:todayISO(), estado:'Enviada', adjunto, metodo:'file', convId:c.id, postIdx};
+  const nuevaPostulacion = {id:uid('p'), convocatoria:c.titulo, institucion:c.institucion, fecha:todayISO(), estado:'Enviada', adjunto, metodo:'file', convId:c.id, postId};
   misPostulaciones.unshift(nuevaPostulacion);
   notificacionesArtista.unshift({id:uid('n'), tipo:'recibida', mensaje:`${c.institucion} recibió tu postulación a "${c.titulo}".`, fecha:todayISO(), leida:false});
   closeModal();
@@ -3602,7 +3619,7 @@ function renderMisPostulaciones(){
               <td class="text-dim">${escapeHtml(p.institucion)}</td>
               <td class="text-dim">${p.adjunto ? `<i class="fa-solid ${p.metodo==='file'?'fa-paperclip':'fa-link'}" style="margin-right:6px; color:var(--red-dark);"></i>${escapeHtml(p.adjunto)}` : '—'}</td>
               <td>${fmtDate(p.fecha)}</td>
-              <td><span class="pill ${p.estado==='Aceptada'?'pill-sage':p.estado==='Rechazada'?'pill-red':'pill-amber'}">${escapeHtml(p.estado)}</span></td>
+              <td><span class="pill ${p.estado==='Aceptada'?'pill-sage':(p.estado==='Rechazada'||p.estado==='Eliminada')?'pill-red':'pill-amber'}">${escapeHtml(p.estado)}</span></td>
               <td>${p.id ? `
                 <div class="row-actions">
                   ${p.convId===undefined ? `
