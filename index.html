@@ -225,7 +225,7 @@ button{font-family:inherit; cursor:pointer;}
         <span class="eyebrow" id="hero-eyebrow">Obra destacada en la red</span>
         <h1 id="hero-title">Impresión,<br>sol naciente</h1>
         <p class="hero-byline" id="hero-byline">Claude Monet · 1872</p>
-        <p class="hero-desc" id="hero-desc">La obra que le dio nombre al impresionismo. Piezas como esta representan el tipo de patrimonio que museos y colecciones buscan poner en valor a través de la red de conectARTE.</p>
+        <p class="hero-desc" id="hero-desc">La obra que le dio nombre al impresionismo. Capturando el puerto de Le Havre envuelto en la bruma matinal, Monet rompió de forma radical con los cánones académicos al priorizar la incidencia efímera de la luz por encima del detalle figurativo. A través de pinceladas rápidas y sueltas, el naranja encendido del sol naciente contrasta con los tonos azulados y grisáceos del agua y la neblina, congelando un instante fugaz e irrepetible de la atmósfera marina que transformó para siempre la historia del arte.</p>
         <div class="hero-actions">
           <button class="btn-hero" onclick="openLoginModal('museo')"><i class="fa-solid fa-landmark" aria-hidden="true"></i> Soy museo o institución</button>
           <button class="btn-hero outline" onclick="openLoginModal('artista')"><i class="fa-solid fa-palette" aria-hidden="true"></i> Soy artista</button>
@@ -4935,7 +4935,7 @@ const heroSlides = [
     eyebrow: 'Obra destacada en la red',
     tituloHtml: 'Impresión,<br>sol naciente',
     byline: 'Claude Monet · 1872',
-    desc: 'La obra que le dio nombre al impresionismo. Piezas como esta representan el tipo de patrimonio que museos y colecciones buscan poner en valor a través de la red de conectARTE.',
+    desc: 'La obra que le dio nombre al impresionismo. Capturando el puerto de Le Havre envuelto en la bruma matinal, Monet rompió de forma radical con los cánones académicos al priorizar la incidencia efímera de la luz por encima del detalle figurativo. A través de pinceladas rápidas y sueltas, el naranja encendido del sol naciente contrasta con los tonos azulados y grisáceos del agua y la neblina, congelando un instante fugaz e irrepetible de la atmósfera marina que transformó para siempre la historia del arte.',
     img: 'https://commons.wikimedia.org/wiki/Special:FilePath/Monet_-_Impression,_Sunrise.jpg',
     pos: 'center 48%'
   },
@@ -4943,7 +4943,7 @@ const heroSlides = [
     eyebrow: 'Obra destacada en la red',
     tituloHtml: 'La vida<br>colorida',
     byline: 'Wassily Kandinsky · 1907',
-    desc: 'Una escena vibrante y multitudinaria que anticipa el camino de Kandinsky hacia la abstracción. Este tipo de obra es la que buscamos que artistas y museos conecten a través de la red.',
+    desc: 'Una escena vibrante y multitudinaria que anticipa el camino de Kandinsky hacia la abstracción. En esta obra fundamental, el artista funde la nostalgia por su Rusia natal con la experimentación de vanguardia.',
     img: 'https://commons.wikimedia.org/wiki/Special:FilePath/Kandinsky_Das_bunte_Leben_PA291001.jpg',
     pos: 'center 42%'
   },
@@ -4951,7 +4951,7 @@ const heroSlides = [
     eyebrow: 'Obra destacada en la red',
     tituloHtml: 'La noche<br>estrellada',
     byline: 'Vincent van Gogh · 1889',
-    desc: 'Pintada desde la ventana de su habitación en Saint-Rémy-de-Provence, es una de las obras más reconocidas de la historia del arte. El tipo de patrimonio que instituciones de todo el mundo buscan preservar y exhibir.',
+    desc: 'Pintada desde la ventana de su habitación en el asilo de Saint-Rémy-de-Provence, es una de las obras más reconocidas de la historia del arte. Esta obra maestra captura la visión turbulenta e íntima del artista mediante pinceladas gruesas y enérgicas en espiral (impasto) que infunden un movimiento frenético al cielo nocturno.',
     img: 'https://commons.wikimedia.org/wiki/Special:FilePath/Vincent_van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg',
     pos: 'center 40%'
   }
@@ -5399,7 +5399,7 @@ async function renderValorarConectarte(app){
     <div class="card" style="max-width:560px;">
       <label style="font-size:12px; font-weight:700; color:var(--ink-dim); text-transform:uppercase; letter-spacing:.04em; display:block; margin-bottom:8px;">Tu puntaje</label>
       <div id="valorar-estrellas" style="display:flex; gap:6px; margin-bottom:20px; font-size:26px;">
-        ${[1,2,3,4,5].map(n=>`<i class="fa-solid fa-star" data-val="${n}" onclick="elegirEstrellas(${n})" style="cursor:pointer; color:${n<=valorarEstrellasActual?'#B5502E':'#D9D5C9'};"></i>`).join('')}
+        ${[1,2,3,4,5].map(n=>`<i class="fa-solid fa-star" data-val="${n}" onclick="elegirEstrellas(${n})" style="cursor:pointer; color:${n<=valorarEstrellasActual?'#F5B301':'#D9D5C9'};"></i>`).join('')}
       </div>
       ${tw_field('Tu testimonio', tw_input('valorar-texto', {tag:'textarea', rows:4, value: existente?escapeHtml(existente.texto):'', placeholder:'Contanos tu experiencia usando conectARTE...'}))}
       <button class="btn btn-solid" onclick="guardarTestimonio('${app}')"><i class="fa-solid fa-check"></i> ${existente?'Actualizar mi valoración':'Publicar valoración'}</button>
@@ -5411,7 +5411,7 @@ async function renderValorarConectarte(app){
 function elegirEstrellas(n){
   valorarEstrellasActual = n;
   document.querySelectorAll('#valorar-estrellas i').forEach(el=>{
-    el.style.color = Number(el.dataset.val) <= n ? '#B5502E' : '#D9D5C9';
+    el.style.color = Number(el.dataset.val) <= n ? '#F5B301' : '#D9D5C9';
   });
 }
 
