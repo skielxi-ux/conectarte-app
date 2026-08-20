@@ -647,18 +647,18 @@ async function guardarEstado(){
   // todavía están en memoria mientras se completa la primera carga.
   if(datosGlobalesCargados){
     try{
-      await GLOBAL_DOC.set({ convocatorias, conversaciones, blogPosts }, {merge:true});
+      await conReintentoDeAuth(() => GLOBAL_DOC.set({ convocatorias, conversaciones, blogPosts }, {merge:true}));
     }catch(e){
       console.error('No se pudo guardar el estado global en Firebase:', e);
     }
   }
   if(!usuarioActualUid || !datosPrivadosCargados) return;
   try{
-    await db.collection('usuarios').doc(usuarioActualUid).collection('datos').doc('privado').set({
+    await conReintentoDeAuth(() => db.collection('usuarios').doc(usuarioActualUid).collection('datos').doc('privado').set({
       misPostulaciones, notificacionesArtista,
       jurados, rubrica, evaluaciones,
       museoPerfil, equipoMuseo, artistaPerfil, obrasArtista
-    }, {merge:true});
+    }, {merge:true}));
   }catch(e){
     console.error('No se pudo guardar el estado privado en Firebase:', e);
   }
@@ -986,8 +986,10 @@ async function submitAuth(role){
   }
 }
 
-// Reintenta una operación de Firestore si falla por 'permission-denied' justo
-// después de loguearse (el token puede tardar una fracción de segundo en propagarse).
+// Reintenta una operación de Firestore si falla por 'permission-denied'.
+// Esto pasa justo después de loguearse (el token tarda una fracción de segundo
+// en propagarse) o si el token quedó vencido por inactividad de la pestaña —
+// en ambos casos, forzar un refresh del token y reintentar lo resuelve.
 async function conReintentoDeAuth(fn, intentos){
   intentos = intentos===undefined ? 3 : intentos;
   for(let i=0; i<intentos; i++){
@@ -995,6 +997,7 @@ async function conReintentoDeAuth(fn, intentos){
       return await fn();
     }catch(e){
       if(e.code === 'permission-denied' && i < intentos-1){
+        try{ if(auth.currentUser) await auth.currentUser.getIdToken(true); }catch(e2){}
         await new Promise(r => setTimeout(r, 500));
         continue;
       }
