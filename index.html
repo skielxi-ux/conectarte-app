@@ -927,8 +927,49 @@ function toggleAuthModo(role){
   renderLoginModal(role);
 }
 
+function abrirRecuperarContrasena(role){
+  const emailInput = document.getElementById('login-user');
+  recuperarEmailPrellenado = emailInput ? emailInput.value.trim() : '';
+  authModo = 'recuperar';
+  renderLoginModal(role);
+}
+
+let recuperarEmailPrellenado = '';
+
 function renderLoginModal(role){
   const isMuseo = role==='museo';
+
+  if(authModo==='recuperar'){
+    const sub = isMuseo ? 'Panel de museo' : 'Panel de artista';
+    openModal(`
+      <div class="w-full max-w-md bg-white rounded-3xl shadow-2xl p-8 md:p-10 relative" style="font-family:'Lato',sans-serif;">
+        <button class="absolute top-6 right-6 text-gray-400 hover:text-gray-700 transition" onclick="closeModal()" aria-label="Cerrar"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+        <div class="flex gap-1.5 mb-6">
+          <div class="h-1.5 flex-1 rounded-full" style="background:#C1573A;"></div>
+          <div class="h-1.5 flex-1 rounded-full bg-gray-200"></div>
+        </div>
+        <p class="text-[11px] font-bold uppercase tracking-widest text-gray-500 mb-3">Recuperar contraseña · ${sub}</p>
+        <h2 class="text-[26px] leading-tight font-black text-gray-900 mb-2">¿Olvidaste tu contraseña?</h2>
+        <p class="text-sm text-gray-500 mb-7">Ingresá el email de tu cuenta y te mandamos un link para elegir una nueva.</p>
+
+        <div id="auth-error" class="hidden mb-4 text-sm rounded-lg px-3 py-2"></div>
+
+        <div class="mb-6">
+          <label class="block text-sm font-bold text-gray-800 mb-1.5">Email</label>
+          <input id="recuperar-email" type="email" value="${escapeHtml(recuperarEmailPrellenado)}" class="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 transition" style="--tw-ring-color:#C1573A66;" placeholder="tu@email.com" onkeydown="if(event.key==='Enter') recuperarContrasena('${role}')">
+        </div>
+
+        <button id="recuperar-submit-btn" onclick="recuperarContrasena('${role}')" class="w-full rounded-xl py-3.5 font-bold text-white text-[15px] transition hover:opacity-90" style="background:#B5502E;">
+          Enviar link de recuperación
+        </button>
+        <p class="text-center text-sm text-gray-500 mt-5">
+          <strong style="color:#B5502E; cursor:pointer;" onclick="authModo='login'; renderLoginModal('${role}')">Volver a ingresar</strong>
+        </p>
+      </div>
+    `);
+    return;
+  }
+
   const esRegistro = authModo === 'registro';
   const headline = esRegistro
     ? (isMuseo ? 'Creá tu cuenta de museo' : 'Creá tu cuenta de artista')
@@ -958,7 +999,7 @@ function renderLoginModal(role){
       <div class="mb-6">
         <label class="block text-sm font-bold text-gray-800 mb-1.5">Contraseña</label>
         <input id="login-pass" type="password" class="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 transition" style="--tw-ring-color:#C1573A66;" placeholder="••••••••" onkeydown="if(event.key==='Enter') submitAuth('${role}')">
-        ${!esRegistro ? `<p class="text-right mt-1.5"><a href="#" onclick="event.preventDefault(); recuperarContrasena()" class="text-xs font-semibold" style="color:#B5502E;">¿Olvidaste tu contraseña?</a></p>` : ''}
+        ${!esRegistro ? `<p class="text-right mt-1.5"><a href="#" onclick="event.preventDefault(); abrirRecuperarContrasena('${role}')" class="text-xs font-semibold" style="color:#B5502E;">¿Olvidaste tu contraseña?</a></p>` : ''}
       </div>
 
       <button id="auth-submit-btn" onclick="submitAuth('${role}')" class="w-full rounded-xl py-3.5 font-bold text-white text-[15px] transition hover:opacity-90" style="background:#B5502E;">
@@ -972,20 +1013,29 @@ function renderLoginModal(role){
   `);
 }
 
-async function recuperarContrasena(){
-  const emailInput = document.getElementById('login-user');
-  let email = emailInput ? emailInput.value.trim() : '';
+async function recuperarContrasena(role){
+  const emailInput = document.getElementById('recuperar-email');
+  const email = emailInput ? emailInput.value.trim() : '';
+  const errorEl = document.getElementById('auth-error');
+  const btn = document.getElementById('recuperar-submit-btn');
   if(!email){
-    email = (prompt('Ingresá el email de tu cuenta para enviarte el link de recuperación:') || '').trim();
-    if(!email) return;
+    if(errorEl){ errorEl.classList.remove('hidden','bg-green-50','border-green-200','text-green-700'); errorEl.classList.add('bg-red-50','border','border-red-200','text-red-600'); errorEl.textContent = 'Ingresá tu email.'; }
+    return;
   }
+
+  if(btn){ btn.disabled = true; btn.textContent = 'Enviando…'; }
   try{
     await auth.sendPasswordResetEmail(email);
-    mostrarErrorAuth(`Te enviamos un email a ${email} con un link para elegir una contraseña nueva. Revisá también la carpeta de spam.`);
-    const errorEl = document.getElementById('auth-error');
-    if(errorEl){ errorEl.classList.remove('bg-red-50','border-red-200','text-red-600'); errorEl.classList.add('bg-green-50','border-green-200','text-green-700'); }
+    if(errorEl){
+      errorEl.classList.remove('hidden','bg-red-50','border-red-200','text-red-600');
+      errorEl.classList.add('bg-green-50','border','border-green-200','text-green-700');
+      errorEl.textContent = `Te enviamos un email a ${email} con un link para elegir una contraseña nueva. Revisá también la carpeta de spam.`;
+    }
+    if(btn){ btn.textContent = 'Link enviado'; }
   }catch(e){
+    if(errorEl){ errorEl.classList.remove('bg-green-50','border-green-200','text-green-700'); errorEl.classList.add('bg-red-50','border','border-red-200','text-red-600'); }
     mostrarErrorAuth(traducirErrorFirebase(e));
+    if(btn){ btn.disabled = false; btn.textContent = 'Enviar link de recuperación'; }
   }
 }
 
@@ -3276,7 +3326,8 @@ function aplicarPermisos(){
   }
 }
 
-let juradoAuthModo = 'registro'; // 'registro' | 'login'
+let juradoAuthModo = 'registro'; // 'registro' | 'login' | 'recuperar'
+let recuperarEmailJuradoPrellenado = '';
 
 function openLoginModalJurado(){
   juradoAuthModo = 'registro';
@@ -3286,8 +3337,44 @@ function toggleJuradoAuthModo(){
   juradoAuthModo = juradoAuthModo==='registro' ? 'login' : 'registro';
   renderJuradoAuthModal();
 }
+function abrirRecuperarContrasenaJurado(){
+  const emailInput = document.getElementById('jurado-email');
+  recuperarEmailJuradoPrellenado = emailInput ? emailInput.value.trim() : '';
+  juradoAuthModo = 'recuperar';
+  renderJuradoAuthModal();
+}
 
 function renderJuradoAuthModal(){
+  if(juradoAuthModo==='recuperar'){
+    openModal(`
+      <div class="w-full max-w-md bg-white rounded-3xl shadow-2xl p-8 md:p-10 relative" style="font-family:'Lato',sans-serif;">
+        <button class="absolute top-6 right-6 text-gray-400 hover:text-gray-700 transition" onclick="closeModal()" aria-label="Cerrar"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+        <div class="flex gap-1.5 mb-6">
+          <div class="h-1.5 flex-1 rounded-full" style="background:#C1573A;"></div>
+          <div class="h-1.5 flex-1 rounded-full bg-gray-200"></div>
+        </div>
+        <p class="text-[11px] font-bold uppercase tracking-widest text-gray-500 mb-3">Recuperar contraseña · Jurado</p>
+        <h2 class="text-[26px] leading-tight font-black text-gray-900 mb-2">¿Olvidaste tu contraseña?</h2>
+        <p class="text-sm text-gray-500 mb-7">Ingresá el email de tu cuenta de jurado y te mandamos un link para elegir una nueva.</p>
+
+        <div id="jurado-error" class="hidden mb-4 text-sm rounded-lg px-3 py-2"></div>
+
+        <div class="mb-6">
+          <label class="block text-sm font-bold text-gray-800 mb-1.5">Email</label>
+          <input id="recuperar-email-jurado" type="email" value="${escapeHtml(recuperarEmailJuradoPrellenado)}" class="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2" style="--tw-ring-color:#C1573A66;" placeholder="tu@email.com" onkeydown="if(event.key==='Enter') recuperarContrasenaJurado()">
+        </div>
+
+        <button id="recuperar-jurado-submit-btn" onclick="recuperarContrasenaJurado()" class="w-full rounded-xl py-3.5 font-bold text-white text-[15px] transition hover:opacity-90" style="background:#B5502E;">
+          Enviar link de recuperación
+        </button>
+        <p class="text-center text-sm text-gray-500 mt-5">
+          <strong style="color:#B5502E; cursor:pointer;" onclick="juradoAuthModo='login'; renderJuradoAuthModal()">Volver a ingresar</strong>
+        </p>
+      </div>
+    `);
+    return;
+  }
+
   const esRegistro = juradoAuthModo==='registro';
   openModal(`
     <div class="w-full max-w-md bg-white rounded-3xl shadow-2xl p-8 md:p-10 relative" style="font-family:'Lato',sans-serif;">
@@ -3316,7 +3403,7 @@ function renderJuradoAuthModal(){
       <div class="mb-6">
         <label class="block text-sm font-bold text-gray-800 mb-1.5">Contraseña</label>
         <input id="jurado-pass" type="password" class="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2" style="--tw-ring-color:#C1573A66;" placeholder="••••••••" onkeydown="if(event.key==='Enter') submitJuradoAuth()">
-        ${!esRegistro ? `<p class="text-right mt-1.5"><a href="#" onclick="event.preventDefault(); recuperarContrasenaJurado()" class="text-xs font-semibold" style="color:#B5502E;">¿Olvidaste tu contraseña?</a></p>` : ''}
+        ${!esRegistro ? `<p class="text-right mt-1.5"><a href="#" onclick="event.preventDefault(); abrirRecuperarContrasenaJurado()" class="text-xs font-semibold" style="color:#B5502E;">¿Olvidaste tu contraseña?</a></p>` : ''}
       </div>
 
       <button id="jurado-submit-btn" onclick="submitJuradoAuth()" class="w-full rounded-xl py-3.5 font-bold text-white text-[15px] transition hover:opacity-90" style="background:#B5502E;">
@@ -3338,19 +3425,28 @@ function mostrarErrorJurado(msg){
 }
 
 async function recuperarContrasenaJurado(){
-  const emailInput = document.getElementById('jurado-email');
-  let email = emailInput ? emailInput.value.trim() : '';
+  const emailInput = document.getElementById('recuperar-email-jurado');
+  const email = emailInput ? emailInput.value.trim() : '';
+  const errorEl = document.getElementById('jurado-error');
+  const btn = document.getElementById('recuperar-jurado-submit-btn');
   if(!email){
-    email = (prompt('Ingresá el email de tu cuenta de jurado para enviarte el link de recuperación:') || '').trim();
-    if(!email) return;
+    if(errorEl){ errorEl.classList.remove('hidden','bg-green-50','border-green-200','text-green-700'); errorEl.classList.add('bg-red-50','border','border-red-200','text-red-600'); errorEl.textContent = 'Ingresá tu email.'; }
+    return;
   }
+
+  if(btn){ btn.disabled = true; btn.textContent = 'Enviando…'; }
   try{
     await auth.sendPasswordResetEmail(email);
-    mostrarErrorJurado(`Te enviamos un email a ${email} con un link para elegir una contraseña nueva. Revisá también la carpeta de spam.`);
-    const errorEl = document.getElementById('jurado-error');
-    if(errorEl){ errorEl.classList.remove('bg-red-50','border-red-200','text-red-600'); errorEl.classList.add('bg-green-50','border-green-200','text-green-700'); }
+    if(errorEl){
+      errorEl.classList.remove('hidden','bg-red-50','border-red-200','text-red-600');
+      errorEl.classList.add('bg-green-50','border','border-green-200','text-green-700');
+      errorEl.textContent = `Te enviamos un email a ${email} con un link para elegir una contraseña nueva. Revisá también la carpeta de spam.`;
+    }
+    if(btn){ btn.textContent = 'Link enviado'; }
   }catch(e){
+    if(errorEl){ errorEl.classList.remove('bg-green-50','border-green-200','text-green-700'); errorEl.classList.add('bg-red-50','border','border-red-200','text-red-600'); }
     mostrarErrorJurado(traducirErrorFirebase(e));
+    if(btn){ btn.disabled = false; btn.textContent = 'Enviar link de recuperación'; }
   }
 }
 
