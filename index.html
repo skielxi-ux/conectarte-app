@@ -573,6 +573,7 @@ let usuarioActualRol = null;
 let autosaveIntervalId = null;
 let datosGlobalesCargados = false;
 let datosPrivadosCargados = false;
+let misVisitas = 0;
 let juradoMuseoUid = null; // sólo se usa cuando usuarioActualRol==='jurado': a qué museo pertenece
 let miJuradoId = null; // id del jurado en el roster del museo (jurados[].id), sólo para sesiones de jurado
 let staffMuseoUid = null; // sólo se usa cuando usuarioActualRol==='staff': a qué museo pertenece
@@ -599,7 +600,7 @@ async function guardarEstado(){
     // Un miembro de equipo guarda en el doc del MUSEO al que pertenece, no en
     // uno propio (museoUidActivo() resuelve esto automáticamente).
     await conReintentoDeAuth(() => db.collection('usuarios').doc(museoUidActivo()).collection('datos').doc('privado').set({
-      misPostulaciones, notificacionesArtista, notificacionesMuseo,
+      misPostulaciones, notificacionesArtista, notificacionesMuseo, evalIdsNotificados,
       museoPerfil, equipoMuseo, artistaPerfil, obrasArtista
     }, {merge:true}));
   }catch(e){
@@ -717,10 +718,38 @@ function iniciarListenerEvaluaciones(museoUid){
   });
 }
 
+// Contador público de visitas: cualquiera (incluso sin login) puede sumar una
+// visita al perfil de un museo o artista desde la landing. Vive en su propia
+// colección (no en "datos/privado") justamente para que un visitante anónimo
+// pueda escribirlo sin tener acceso al resto de los datos de la cuenta.
+let visitasListenerUid = null;
+let visitasUnsub = null;
+function iniciarListenerVisitas(uid){
+  if(!uid || visitasListenerUid===uid) return;
+  visitasListenerUid = uid;
+  if(visitasUnsub){ visitasUnsub(); }
+  visitasUnsub = db.collection('visitas').doc(uid).onSnapshot(snap=>{
+    misVisitas = snap.exists ? (Number(snap.data().count)||0) : 0;
+    try{ if(usuarioActualRol==='museo' || usuarioActualRol==='staff') renderMuseoDashboard(); }catch(e){}
+    try{ if(usuarioActualRol==='artista') renderArtistaDashboard(); }catch(e){}
+  }, err=>{
+    console.error('No se pudo sincronizar las visitas:', err);
+  });
+}
+
+// Se llama desde la landing pública cuando alguien abre la ficha de un museo
+// o el portfolio de un artista. No requiere estar logueado.
+function registrarVisitaPerfil(uid){
+  if(!uid) return;
+  db.collection('visitas').doc(uid).set({ count: firebase.firestore.FieldValue.increment(1) }, {merge:true}).catch(e=>{
+    console.error('No se pudo registrar la visita:', e);
+  });
+}
+
 // Punto de partida en blanco para una cuenta nueva (no usa los datos de ejemplo de la demo).
 function plantillaPrivadaVacia(role, email){
   const base = {
-    misPostulaciones: [], notificacionesArtista: [], notificacionesMuseo: [],
+    misPostulaciones: [], notificacionesArtista: [], notificacionesMuseo: [], evalIdsNotificados: [],
     museoPerfil: { nombre:'', ciudad:'', tipo:'Museo público', fundacion:'', bio:'', especialidades:[], email: email||'', sitio:'', instagram:'', direccion:'', telefono:'', whatsapp:'', logoUrl:null, fotos:[] },
     equipoMuseo: role==='museo' ? [
       {id:uid('m'), nombre:'Vos (titular de la cuenta)', email: email||'', rol:'Dirección', permisos:[...ROLE_DEFAULTS['Dirección']], titular:true}
@@ -751,6 +780,7 @@ async function cargarEstadoPrivado(uid, role, email){
       if(data.misPostulaciones) misPostulaciones = data.misPostulaciones;
       if(data.notificacionesArtista) notificacionesArtista = data.notificacionesArtista;
       if(data.notificacionesMuseo) notificacionesMuseo = data.notificacionesMuseo;
+      evalIdsNotificados = data.evalIdsNotificados || [];
       if(data.museoPerfil) museoPerfil = data.museoPerfil;
       if(data.equipoMuseo) equipoMuseo = data.equipoMuseo;
       if(data.artistaPerfil) artistaPerfil = data.artistaPerfil;
@@ -761,6 +791,7 @@ async function cargarEstadoPrivado(uid, role, email){
       misPostulaciones = vacio.misPostulaciones;
       notificacionesArtista = vacio.notificacionesArtista;
       notificacionesMuseo = vacio.notificacionesMuseo;
+      evalIdsNotificados = vacio.evalIdsNotificados;
       museoPerfil = vacio.museoPerfil;
       equipoMuseo = vacio.equipoMuseo;
       artistaPerfil = vacio.artistaPerfil;
@@ -783,6 +814,7 @@ async function cargarEstadoPrivado(uid, role, email){
       iniciarListenerCuraduriaConfig(uid);
       iniciarListenerEvaluaciones(uid);
     }
+    iniciarListenerVisitas(uid);
   }catch(e){
     console.error('No se pudo cargar el estado privado desde Firebase:', e);
   }
@@ -802,6 +834,7 @@ async function resetearDemo(){
   if(autosaveIntervalId){ clearInterval(autosaveIntervalId); autosaveIntervalId = null; }
   if(curaduriaConfigUnsub){ curaduriaConfigUnsub(); curaduriaConfigUnsub = null; curaduriaConfigListenerUid = null; }
   if(evaluacionesUnsub){ evaluacionesUnsub(); evaluacionesUnsub = null; evaluacionesListenerUid = null; }
+  if(visitasUnsub){ visitasUnsub(); visitasUnsub = null; visitasListenerUid = null; }
 
   try{
     if(usuarioActualUid){
@@ -816,6 +849,7 @@ async function resetearDemo(){
       await borrar(() => db.collection('testimonios').doc(usuarioActualUid).delete(), 'testimonio');
       await borrar(() => db.collection('museosPublicos').doc(usuarioActualUid).delete(), 'perfil público de museo');
       await borrar(() => db.collection('artistasPublicos').doc(usuarioActualUid).delete(), 'perfil público de artista');
+      await borrar(() => db.collection('visitas').doc(usuarioActualUid).delete(), 'contador de visitas');
 
       await borrar(async () => {
         const evalsSnap = await db.collection('usuarios').doc(usuarioActualUid).collection('evaluaciones').get();
@@ -1268,6 +1302,8 @@ async function logout(){
   miStaffId = null;
   if(curaduriaConfigUnsub){ curaduriaConfigUnsub(); curaduriaConfigUnsub = null; curaduriaConfigListenerUid = null; }
   if(evaluacionesUnsub){ evaluacionesUnsub(); evaluacionesUnsub = null; evaluacionesListenerUid = null; }
+  if(visitasUnsub){ visitasUnsub(); visitasUnsub = null; visitasListenerUid = null; }
+  misVisitas = 0;
   jurados = []; rubrica = []; evaluaciones = []; notificacionesMuseo = [];
   if(autosaveIntervalId){ clearInterval(autosaveIntervalId); autosaveIntervalId = null; }
   document.getElementById('museo-app').classList.add('hidden');
@@ -1412,7 +1448,7 @@ function renderMuseoDashboard(){
     <div class="kpi-grid">
       <div class="kpi"><div class="lbl"><i class="fa-solid fa-bullhorn"></i> Convocatorias activas</div><div class="val">${activas.length}</div><div class="foot">de ${convocatorias.length} en total</div></div>
       <div class="kpi"><div class="lbl"><i class="fa-solid fa-users"></i> Postulantes totales</div><div class="val">${totalPostulantes}</div><div class="foot">en todas las convocatorias</div></div>
-      <div class="kpi"><div class="lbl"><i class="fa-solid fa-eye"></i> Vistas del perfil</div><div class="val sage">0</div><div class="foot">últimos 30 días</div></div>
+      <div class="kpi"><div class="lbl"><i class="fa-solid fa-eye"></i> Vistas del perfil</div><div class="val sage">${misVisitas}</div><div class="foot">clics en tu ficha desde la portada</div></div>
       <div class="kpi"><div class="lbl"><i class="fa-solid fa-clock"></i> Cierran en 15 días</div><div class="val ${porCerrar.length?'red':''}">${porCerrar.length}</div><div class="foot">revisar antes del cierre</div></div>
       <div class="kpi"><div class="lbl"><i class="fa-solid fa-user-clock"></i> Postulantes sin revisar</div><div class="val ${sinRevisar?'red':''}">${sinRevisar}</div><div class="foot"><a href="#" onclick="showView('museo','postulantes'); return false;" style="color:var(--red-dark);">Revisar ahora</a></div></div>
       <div class="kpi"><div class="lbl"><i class="fa-solid fa-clock-rotate-left"></i> Convocatorias cerradas</div><div class="val">${cerradas}</div><div class="foot"><a href="#" onclick="showView('museo','historial'); return false;" style="color:var(--red-dark);">Ver historial</a></div></div>
@@ -3955,7 +3991,7 @@ function renderArtistaDashboard(){
     <div class="kpi-grid">
       <div class="kpi"><div class="lbl"><i class="fa-solid fa-file-signature"></i> Postulaciones enviadas</div><div class="val">${misPostulaciones.length}</div><div class="foot">históricas</div></div>
       <div class="kpi"><div class="lbl"><i class="fa-solid fa-bullhorn"></i> Convocatorias disponibles</div><div class="val">${disponibles.length}</div><div class="foot">activas ahora</div></div>
-      <div class="kpi"><div class="lbl"><i class="fa-solid fa-eye"></i> Vistas de tu perfil</div><div class="val sage">0</div><div class="foot">últimos 30 días</div></div>
+      <div class="kpi"><div class="lbl"><i class="fa-solid fa-eye"></i> Vistas de tu perfil</div><div class="val sage">${misVisitas}</div><div class="foot">clics en tu portfolio desde la portada</div></div>
       <div class="kpi"><div class="lbl"><i class="fa-solid fa-image"></i> Exhibiciones activas</div><div class="val">${aceptadas}</div><div class="foot">postulaciones aceptadas</div></div>
       <div class="kpi"><div class="lbl"><i class="fa-solid fa-percent"></i> Tasa de aceptación</div><div class="val ${tasaAceptacion!==null && tasaAceptacion>=50 ? 'sage' : ''}">${tasaAceptacion===null ? '—' : tasaAceptacion+'%'}</div><div class="foot">${misPostulaciones.length ? aceptadas+' de '+misPostulaciones.length+' postulaciones' : 'todavía sin postulaciones'}</div></div>
       <div class="kpi"><div class="lbl"><i class="fa-solid fa-images"></i> Obras en tu catálogo</div><div class="val">${obrasArtista.length}</div><div class="foot"><a href="#" onclick="showView('artista','misobras'); return false;" style="color:var(--red-dark);">Ver Mis obras</a></div></div>
@@ -4897,12 +4933,20 @@ const NOTIF_CONFIG = {
    MUSEO — NOTIFICACIONES
    ===================================================================== */
 let notificacionesMuseo = [];
+// Evaluaciones (por evalId) para las que ya se generó una notificación al
+// museo. Es un registro aparte del arreglo visible de notificaciones para
+// que "Limpiar notificaciones" pueda vaciar la lista sin que las mismas
+// evaluaciones vuelvan a generar avisos en la próxima carga.
+let evalIdsNotificados = [];
 
 function renderNotificacionesMuseo(){
   document.getElementById('museo-view-notificaciones').innerHTML = `
     <div class="main-head">
       <div><h1>Notificaciones</h1><p class="sub">Novedades sobre evaluaciones y postulaciones</p></div>
-      <button class="btn btn-sm" onclick="marcarTodasLeidasMuseo()"><i class="fa-solid fa-check-double"></i> Marcar todas como leídas</button>
+      <div style="display:flex; gap:8px;">
+        <button class="btn btn-sm" onclick="marcarTodasLeidasMuseo()"><i class="fa-solid fa-check-double"></i> Marcar todas como leídas</button>
+        ${notificacionesMuseo.length ? `<button class="btn btn-sm btn-danger" onclick="limpiarNotificacionesMuseo()"><i class="fa-solid fa-trash"></i> Limpiar notificaciones</button>` : ''}
+      </div>
     </div>
     <div style="display:flex; flex-direction:column; gap:10px;">
       ${notificacionesMuseo.length ? notificacionesMuseo.map(n=>{
@@ -4937,6 +4981,13 @@ function marcarTodasLeidasMuseo(){
   guardarEstado();
   toast('Notificaciones marcadas como leídas');
 }
+function limpiarNotificacionesMuseo(){
+  notificacionesMuseo = [];
+  renderNotificacionesMuseo();
+  updateMuseoBadges();
+  guardarEstado();
+  toast('Notificaciones eliminadas');
+}
 
 // Se llama cada vez que llegan (o se recargan) las evaluaciones: revisa TODAS
 // las evaluaciones actuales — no solo las que llegan en vivo — y genera una
@@ -4946,7 +4997,7 @@ function marcarTodasLeidasMuseo(){
 // exacto en que el jurado evaluó, se entera la próxima vez que entra.
 function generarNotificacionesFaltantesMuseo(){
   if(usuarioActualRol!=='museo' && usuarioActualRol!=='staff') return;
-  const yaNotificados = new Set(notificacionesMuseo.filter(n=>n.evalId).map(n=>n.evalId));
+  const yaNotificados = new Set(evalIdsNotificados);
   let huboNuevas = false;
   evaluaciones.forEach(ev=>{
     const evalId = `${ev.postId}_${ev.juradoId}_r${ev.ronda}`;
@@ -4959,6 +5010,7 @@ function generarNotificacionesFaltantesMuseo(){
       mensaje: `${ev.juradoNombre||'Un jurado'} evaluó la postulación de ${p.nombre} a "${c?c.titulo:''}". Ingresá a Curaduría y jurado para revisarla.`,
       fecha: todayISO(), leida:false
     });
+    evalIdsNotificados.push(evalId);
     huboNuevas = true;
   });
   if(huboNuevas){ updateMuseoBadges(); guardarEstado(); }
@@ -4969,7 +5021,10 @@ function renderNotificaciones(){
   document.getElementById('artista-view-notificaciones').innerHTML = `
     <div class="main-head">
       <div><h1>Notificaciones</h1><p class="sub">Novedades sobre tus postulaciones a convocatorias</p></div>
-      <button class="btn btn-sm" onclick="marcarTodasLeidas()"><i class="fa-solid fa-check-double"></i> Marcar todas como leídas</button>
+      <div style="display:flex; gap:8px;">
+        <button class="btn btn-sm" onclick="marcarTodasLeidas()"><i class="fa-solid fa-check-double"></i> Marcar todas como leídas</button>
+        ${notificacionesArtista.length ? `<button class="btn btn-sm btn-danger" onclick="limpiarNotificaciones()"><i class="fa-solid fa-trash"></i> Limpiar notificaciones</button>` : ''}
+      </div>
     </div>
     <div style="display:flex; flex-direction:column; gap:10px;">
       ${notificacionesArtista.length ? notificacionesArtista.map(n=>{
@@ -4995,13 +5050,21 @@ function renderNotificaciones(){
 
 function marcarNotifLeida(id){
   const n = notificacionesArtista.find(x=>x.id===id);
-  if(n && !n.leida){ n.leida = true; renderNotificaciones(); updateArtistaBadges(); }
+  if(n && !n.leida){ n.leida = true; renderNotificaciones(); updateArtistaBadges(); guardarEstado(); }
 }
 function marcarTodasLeidas(){
   notificacionesArtista.forEach(n=>n.leida=true);
   renderNotificaciones();
   updateArtistaBadges();
+  guardarEstado();
   toast('Notificaciones marcadas como leídas');
+}
+function limpiarNotificaciones(){
+  notificacionesArtista = [];
+  renderNotificaciones();
+  updateArtistaBadges();
+  guardarEstado();
+  toast('Notificaciones eliminadas');
 }
 function updateArtistaBadges(){
   const badge = document.getElementById('badge-notificaciones');
@@ -5194,6 +5257,7 @@ function renderInstitucionesGrid(){
 function verPerfilInstitucion(uid){
   const inst = museosPublicosCache.find(i=>i.uid===uid);
   if(!inst) return;
+  registrarVisitaPerfil(uid);
   const activas = convocatoriasActivasDe(inst.nombre);
 
   const body = `
@@ -5716,6 +5780,7 @@ function cerrarArtistasPage(){
 function verPerfilArtistaPublico(uid){
   const a = artistasPublicosCache.find(x=>x.uid===uid);
   if(!a) return;
+  registrarVisitaPerfil(uid);
   const body = `
     <div class="flex items-center gap-4 mb-5">
       <img src="${a.fotoUrl || avatarUrl(a.nombre)}" alt="${escapeHtml(a.nombre)}" class="w-16 h-16 rounded-full flex-shrink-0" style="background:#F1EFE9; object-fit:cover;">
