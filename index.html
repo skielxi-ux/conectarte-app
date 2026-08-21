@@ -213,6 +213,7 @@ button{font-family:inherit; cursor:pointer;}
             <button onclick="closeMenuCuenta(); openLoginModal('museo')" class="w-full text-left px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-2.5"><i class="fa-solid fa-landmark text-gray-400 w-4"></i> Soy museo</button>
             <button onclick="closeMenuCuenta(); openLoginModal('artista')" class="w-full text-left px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-2.5 border-t border-gray-100"><i class="fa-solid fa-palette text-gray-400 w-4"></i> Soy artista</button>
             <button onclick="closeMenuCuenta(); openLoginModalJurado()" class="w-full text-left px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-2.5 border-t border-gray-100"><i class="fa-solid fa-gavel text-gray-400 w-4"></i> Soy jurado</button>
+            <button onclick="closeMenuCuenta(); openLoginModalEquipo()" class="w-full text-left px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-2.5 border-t border-gray-100"><i class="fa-solid fa-id-badge text-gray-400 w-4"></i> Soy miembro de equipo</button>
           </div>
         </div>
       </div>
@@ -576,6 +577,8 @@ let datosGlobalesCargados = false;
 let datosPrivadosCargados = false;
 let juradoMuseoUid = null; // sólo se usa cuando usuarioActualRol==='jurado': a qué museo pertenece
 let miJuradoId = null; // id del jurado en el roster del museo (jurados[].id), sólo para sesiones de jurado
+let staffMuseoUid = null; // sólo se usa cuando usuarioActualRol==='staff': a qué museo pertenece
+let miStaffId = null; // id del miembro en equipoMuseo[], sólo para sesiones de equipo
 let reseteandoDemo = false; // true durante resetearDemo(): bloquea cualquier autoguardado que pueda "resucitar" datos recién borrados
 
 async function guardarEstado(){
@@ -595,7 +598,9 @@ async function guardarEstado(){
   }
   if(!usuarioActualUid || !datosPrivadosCargados || usuarioActualRol==='jurado') return;
   try{
-    await conReintentoDeAuth(() => db.collection('usuarios').doc(usuarioActualUid).collection('datos').doc('privado').set({
+    // Un miembro de equipo guarda en el doc del MUSEO al que pertenece, no en
+    // uno propio (museoUidActivo() resuelve esto automáticamente).
+    await conReintentoDeAuth(() => db.collection('usuarios').doc(museoUidActivo()).collection('datos').doc('privado').set({
       misPostulaciones, notificacionesArtista, notificacionesMuseo,
       museoPerfil, equipoMuseo, artistaPerfil, obrasArtista
     }, {merge:true}));
@@ -658,11 +663,13 @@ function refrescarVistasCompartidas(){
   });
 }
 
-// El museo determina de quién son los datos de curaduría a usar: si sos el museo
-// mismo (Dirección/equipo), es tu propia cuenta; si sos un jurado externo con
-// cuenta propia, es la del museo al que pertenecés.
+// El museo determina de quién son los datos (privados y de curaduría) a usar:
+// si sos el museo mismo (Dirección), es tu propia cuenta; si sos un jurado o
+// un miembro de equipo con cuenta propia, es la del museo al que pertenecés.
 function museoUidActivo(){
-  return usuarioActualRol==='jurado' ? juradoMuseoUid : usuarioActualUid;
+  if(usuarioActualRol==='jurado') return juradoMuseoUid;
+  if(usuarioActualRol==='staff') return staffMuseoUid;
+  return usuarioActualUid;
 }
 
 // jurados/rúbrica viven en su propio documento (no en "privado") para poder
@@ -827,6 +834,11 @@ async function resetearDemo(){
         const invitesSnap = await db.collection('invitacionesJurado').where('museoUid','==',usuarioActualUid).get();
         await Promise.all(invitesSnap.docs.map(d=>d.ref.delete()));
       }, 'invitaciones de jurado');
+
+      await borrar(async () => {
+        const invitesSnap = await db.collection('invitacionesEquipo').where('museoUid','==',usuarioActualUid).get();
+        await Promise.all(invitesSnap.docs.map(d=>d.ref.delete()));
+      }, 'invitaciones de equipo');
     }
     await GLOBAL_DOC.delete();
   }catch(e){
@@ -1159,6 +1171,12 @@ async function entrarConSesion(user, rolPorDefecto){
       try{ await entrarConSesionJurado(user.uid, d.museoUid, d.juradoId, d.nombre); }catch(e){}
       return;
     }
+    if(usuarioActualRol==='staff'){
+      // Esta cuenta es de un miembro de equipo pero entró por "Soy museo"/"Soy artista": la redirigimos bien.
+      const d = udoc.data();
+      try{ await entrarConSesionEquipo(user.uid, d.museoUid, d.miembroId, d.nombre); }catch(e){}
+      return;
+    }
   }catch(e){
     console.error('No se pudo leer el rol de la cuenta:', e);
     usuarioActualRol = rolPorDefecto;
@@ -1212,6 +1230,8 @@ async function logout(){
   datosPrivadosCargados = false;
   juradoMuseoUid = null;
   miJuradoId = null;
+  staffMuseoUid = null;
+  miStaffId = null;
   if(curaduriaConfigUnsub){ curaduriaConfigUnsub(); curaduriaConfigUnsub = null; curaduriaConfigListenerUid = null; }
   if(evaluacionesUnsub){ evaluacionesUnsub(); evaluacionesUnsub = null; evaluacionesListenerUid = null; }
   jurados = []; rubrica = []; evaluaciones = []; notificacionesMuseo = [];
@@ -2036,6 +2056,10 @@ function convocatoriasConPostulantes(){
 
 function puedeGestionarCuraduria(){
   if(usuarioActualRol==='jurado') return false;
+  if(usuarioActualRol==='staff'){
+    const miembro = equipoMuseo.find(m=>m.id===miStaffId);
+    return !!miembro && miembro.rol==='Dirección';
+  }
   const member = equipoMuseo.find(m=>m.id===currentSimulatedMemberId);
   return !member || member.rol==='Dirección';
 }
@@ -3059,10 +3083,10 @@ function guardarPerfilPublico(){
 // el directorio "Museos" de la landing. No publica emails de equipo ni
 // códigos de invitación de jurados — sólo nombre y rol de cada persona.
 async function sincronizarMuseoPublico(){
-  if(usuarioActualRol!=='museo' || !usuarioActualUid) return;
+  if((usuarioActualRol!=='museo' && usuarioActualRol!=='staff') || !usuarioActualUid) return;
   if(!museoPerfil.nombre || !museoPerfil.nombre.trim()) return;
   try{
-    await conReintentoDeAuth(() => db.collection('museosPublicos').doc(usuarioActualUid).set({
+    await conReintentoDeAuth(() => db.collection('museosPublicos').doc(museoUidActivo()).set({
       nombre: museoPerfil.nombre,
       ciudad: museoPerfil.ciudad || '',
       tipo: museoPerfil.tipo || '',
@@ -3196,13 +3220,13 @@ function renderEquipo(){
               <td><span class="pill ${m.rol==='Dirección'?'pill-red':'pill-sage'}">${escapeHtml(m.rol)}</span></td>
               <td class="text-dim" title="${m.permisos.map(k=>PERMISSION_SECTIONS.find(s=>s.key===k)?.label).join(', ')}">${m.permisos.length} / ${PERMISSION_SECTIONS.length} secciones</td>
               <td>
-                ${m.rol==='Jurado' ? `
+                ${m.titular ? `<span class="text-dim">—</span>` : m.codigoAcceso ? `
                   <div style="display:flex; align-items:center; gap:6px;">
                     <span class="mono" style="background:var(--ink-3); border:1px solid var(--line-strong); padding:4px 9px; border-radius:6px; font-weight:700; letter-spacing:.06em;">${escapeHtml(m.codigoAcceso)}</span>
                     <button class="btn btn-sm btn-ghost" onclick="copiarCodigoJurado('${m.codigoAcceso}')" title="Copiar código"><i class="fa-solid fa-copy"></i></button>
-                    <button class="btn btn-sm btn-ghost" onclick="regenerarCodigoJurado('${m.id}')" title="Regenerar código"><i class="fa-solid fa-rotate"></i></button>
+                    <button class="btn btn-sm btn-ghost" onclick="generarCodigoAccesoEquipo('${m.id}')" title="Regenerar código (el anterior deja de funcionar)"><i class="fa-solid fa-rotate"></i></button>
                   </div>
-                ` : `<span class="text-dim">—</span>`}
+                ` : `<button class="btn btn-sm" onclick="generarCodigoAccesoEquipo('${m.id}')"><i class="fa-solid fa-key"></i> Generar código</button>`}
               </td>
               <td>
                 <div class="row-actions">
@@ -3215,7 +3239,7 @@ function renderEquipo(){
           `).join('')}
         </tbody>
       </table>
-      <p class="text-dim" style="font-size:11.5px; margin-top:12px;"><i class="fa-solid fa-circle-info"></i> Compartí el código de acceso con el jurado por fuera del sistema (email, WhatsApp). Sin ese código no puede ingresar.</p>
+      <p class="text-dim" style="font-size:11.5px; margin-top:12px;"><i class="fa-solid fa-circle-info"></i> Generá un código y compartíselo a esa persona por fuera del sistema (email, WhatsApp): con ese código va a poder crear su propia cuenta desde "Soy miembro de equipo" en la portada, y va a ver solo las secciones que le diste acceso acá.</p>
     </div>
   `;
 }
@@ -3264,14 +3288,9 @@ function guardarMiembro(id){
 
   if(id){
     const m = equipoMuseo.find(x=>x.id===id);
-    if(m){
-      m.nombre=nombre; m.email=email; m.rol=rol; m.permisos=permisos;
-      if(rol==='Jurado' && !m.codigoAcceso) m.codigoAcceso = generarCodigoAcceso(email);
-    }
+    if(m){ m.nombre=nombre; m.email=email; m.rol=rol; m.permisos=permisos; }
   } else {
-    const nuevo = {id:uid('m'), nombre, email, rol, permisos};
-    if(rol==='Jurado') nuevo.codigoAcceso = generarCodigoAcceso(email);
-    equipoMuseo.push(nuevo);
+    equipoMuseo.push({id:uid('m'), nombre, email, rol, permisos});
   }
   closeModal();
   toast(id ? 'Permisos actualizados' : 'Miembro invitado');
@@ -3280,9 +3299,13 @@ function guardarMiembro(id){
   sincronizarMuseoPublico();
 }
 
-function eliminarMiembro(id){
-  equipoMuseo = equipoMuseo.filter(m=>m.id!==id);
+async function eliminarMiembro(id){
+  const m = equipoMuseo.find(x=>x.id===id);
+  equipoMuseo = equipoMuseo.filter(x=>x.id!==id);
   if(currentSimulatedMemberId===id){ currentSimulatedMemberId=null; aplicarPermisos(); }
+  if(m && m.codigoAcceso){
+    try{ await db.collection('invitacionesEquipo').doc(m.codigoAcceso).delete(); }catch(e){ /* no bloqueamos por esto */ }
+  }
   toast('Miembro eliminado del equipo');
   renderEquipo();
   guardarEstado();
@@ -3297,11 +3320,28 @@ function copiarCodigoJurado(codigo){
   }
 }
 
-function regenerarCodigoJurado(id){
+// Genera (o regenera) el código de invitación REAL de un miembro de equipo:
+// crea un documento en invitacionesEquipo que esa persona va a canjear desde
+// "Soy miembro de equipo" en la portada para crear su propia cuenta.
+async function generarCodigoAccesoEquipo(id){
   const m = equipoMuseo.find(x=>x.id===id);
   if(!m) return;
-  m.codigoAcceso = generarCodigoAcceso();
-  toast('Nuevo código generado. El anterior ya no funciona.');
+  const codigoViejo = m.codigoAcceso;
+  const codigoNuevo = generarCodigoAcceso();
+  try{
+    await db.collection('invitacionesEquipo').doc(codigoNuevo).set({
+      museoUid: usuarioActualUid, miembroId: id, nombre: m.nombre, email: m.email, rol: m.rol, creado: new Date().toISOString()
+    });
+    if(codigoViejo){
+      try{ await db.collection('invitacionesEquipo').doc(codigoViejo).delete(); }catch(e){ /* no bloqueamos por esto */ }
+    }
+  }catch(e){
+    console.error('No se pudo generar el código de acceso:', e);
+    toast('No se pudo generar el código. Revisá la consola.','err');
+    return;
+  }
+  m.codigoAcceso = codigoNuevo;
+  toast(codigoViejo ? 'Nuevo código generado. El anterior ya no funciona.' : 'Código de acceso generado');
   renderEquipo();
   guardarEstado();
 }
@@ -3336,6 +3376,29 @@ function aplicarPermisos(){
     return;
   }
 
+  const existingBanner = document.getElementById('sim-banner');
+  if(existingBanner) existingBanner.remove();
+
+  // Sesión real de un miembro de equipo (login propio, no simulación de
+  // Dirección): sus permisos vienen de su propia fila en equipoMuseo.
+  if(usuarioActualRol==='staff'){
+    const miembro = equipoMuseo.find(m=>m.id===miStaffId);
+    const permisos = miembro ? miembro.permisos : ['dashboard'];
+    document.querySelectorAll('.nav-item[data-app="museo"]').forEach(el=>{
+      el.style.display = permisos.includes(el.dataset.view) ? '' : 'none';
+    });
+    if(miembro){
+      const banner = document.createElement('div');
+      banner.id = 'sim-banner';
+      banner.style.cssText = 'background:#F0F7F4;border:1px solid #BFE3D3;color:#1F5A45;font-size:13px;padding:10px 16px;border-radius:var(--radius);margin-bottom:20px;font-family:var(--font-app);';
+      banner.innerHTML = `<i class="fa-solid fa-id-badge" style="margin-right:6px;"></i>Sesión de equipo — <strong>${escapeHtml(miembro.nombre)}</strong> (${escapeHtml(miembro.rol)}) — ${permisos.length} de ${PERMISSION_SECTIONS.length} secciones`;
+      const main = document.querySelector('#museo-app .main');
+      if(main) main.prepend(banner);
+    }
+    return;
+  }
+
+  // Simulación "Ver como" (solo Dirección, previsualizando desde su propia sesión).
   const member = equipoMuseo.find(m=>m.id===currentSimulatedMemberId);
   const permisos = member ? member.permisos : PERMISSION_SECTIONS.map(s=>s.key);
 
@@ -3344,8 +3407,6 @@ function aplicarPermisos(){
     el.style.display = allowed ? '' : 'none';
   });
 
-  const existingBanner = document.getElementById('sim-banner');
-  if(existingBanner) existingBanner.remove();
   if(member){
     const banner = document.createElement('div');
     banner.id = 'sim-banner';
@@ -3449,6 +3510,179 @@ function renderJuradoAuthModal(){
   `);
 }
 
+/* =====================================================================
+   EQUIPO — login/registro real de un miembro del staff (no titular),
+   mismo patrón que jurado: código de invitación → crea su propia cuenta.
+   ===================================================================== */
+let equipoAuthModo = 'registro'; // 'registro' | 'login' | 'recuperar'
+let recuperarEmailEquipoPrellenado = '';
+
+function openLoginModalEquipo(){
+  equipoAuthModo = 'registro';
+  renderEquipoAuthModal();
+}
+function toggleEquipoAuthModo(){
+  equipoAuthModo = equipoAuthModo==='registro' ? 'login' : 'registro';
+  renderEquipoAuthModal();
+}
+function abrirRecuperarContrasenaEquipo(){
+  const emailInput = document.getElementById('equipo-email');
+  recuperarEmailEquipoPrellenado = emailInput ? emailInput.value.trim() : '';
+  equipoAuthModo = 'recuperar';
+  renderEquipoAuthModal();
+}
+
+function renderEquipoAuthModal(){
+  if(equipoAuthModo==='recuperar'){
+    openModal(`
+      <div class="w-full max-w-md bg-white rounded-3xl shadow-2xl p-8 md:p-10 relative" style="font-family:'Lato',sans-serif;">
+        <button class="absolute top-6 right-6 text-gray-400 hover:text-gray-700 transition" onclick="closeModal()" aria-label="Cerrar"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+        <div class="flex gap-1.5 mb-6">
+          <div class="h-1.5 flex-1 rounded-full" style="background:#B5502E;"></div>
+          <div class="h-1.5 flex-1 rounded-full bg-gray-200"></div>
+        </div>
+        <p class="text-[11px] font-bold uppercase tracking-widest text-gray-500 mb-3">Recuperar contraseña · Equipo</p>
+        <h2 class="text-[26px] leading-tight font-black text-gray-900 mb-2">¿Olvidaste tu contraseña?</h2>
+        <p class="text-sm text-gray-500 mb-7">Ingresá el email de tu cuenta de equipo y te mandamos un link para elegir una nueva.</p>
+
+        <div id="equipo-error" class="hidden mb-4 text-sm rounded-lg px-3 py-2"></div>
+
+        <div class="mb-6">
+          <label class="block text-sm font-bold text-gray-800 mb-1.5">Email</label>
+          <input id="recuperar-email-equipo" type="email" value="${escapeHtml(recuperarEmailEquipoPrellenado)}" class="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2" style="--tw-ring-color:#C1573A66;" placeholder="tu@email.com" onkeydown="if(event.key==='Enter') recuperarContrasenaEquipo()">
+        </div>
+
+        <button id="recuperar-equipo-submit-btn" onclick="recuperarContrasenaEquipo()" class="w-full rounded-xl py-3.5 font-bold text-white text-[15px] transition hover:opacity-90" style="background:#B5502E;">
+          Enviar link de recuperación
+        </button>
+        <p class="text-center text-sm text-gray-500 mt-5">
+          <strong style="color:#B5502E; cursor:pointer;" onclick="equipoAuthModo='login'; renderEquipoAuthModal()">Volver a ingresar</strong>
+        </p>
+      </div>
+    `);
+    return;
+  }
+
+  const esRegistro = equipoAuthModo==='registro';
+  openModal(`
+    <div class="w-full max-w-md bg-white rounded-3xl shadow-2xl p-8 md:p-10 relative" style="font-family:'Lato',sans-serif;">
+      <button class="absolute top-6 right-6 text-gray-400 hover:text-gray-700 transition" onclick="closeModal()" aria-label="Cerrar"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+      <div class="flex gap-1.5 mb-6">
+        <div class="h-1.5 flex-1 rounded-full" style="background:#B5502E;"></div>
+        <div class="h-1.5 flex-1 rounded-full bg-gray-200"></div>
+      </div>
+      <p class="text-[11px] font-bold uppercase tracking-widest text-gray-500 mb-3">${esRegistro ? 'Primera vez · con código de invitación' : 'Ya tengo cuenta de equipo'}</p>
+      <h2 class="text-[26px] leading-tight font-black text-gray-900 mb-2">${esRegistro ? 'Creá tu cuenta de equipo' : 'Ingresá como equipo'}</h2>
+      <p class="text-sm text-gray-500 mb-7">${esRegistro ? 'Necesitás el código de invitación que te compartió la institución.' : 'Ingresá con el email y contraseña que usaste para crear tu cuenta.'}</p>
+
+      <div id="equipo-error" class="hidden mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2"></div>
+
+      ${esRegistro ? `
+        <div class="mb-4">
+          <label class="block text-sm font-bold text-gray-800 mb-1.5">Código de invitación</label>
+          <input id="equipo-codigo" class="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 uppercase tracking-widest font-bold" style="--tw-ring-color:#C1573A66;" placeholder="Ej: X7K2QP" maxlength="6">
+        </div>
+      ` : `
+        <div class="mb-4">
+          <label class="block text-sm font-bold text-gray-800 mb-1.5">Email</label>
+          <input id="equipo-email" type="email" class="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2" style="--tw-ring-color:#C1573A66;" placeholder="tu@email.com">
+        </div>
+      `}
+      <div class="mb-6">
+        <label class="block text-sm font-bold text-gray-800 mb-1.5">Contraseña</label>
+        <input id="equipo-pass" type="password" class="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2" style="--tw-ring-color:#C1573A66;" placeholder="••••••••" onkeydown="if(event.key==='Enter') submitEquipoAuth()">
+        ${!esRegistro ? `<p class="text-right mt-1.5"><a href="#" onclick="event.preventDefault(); abrirRecuperarContrasenaEquipo()" class="text-xs font-semibold" style="color:#B5502E;">¿Olvidaste tu contraseña?</a></p>` : ''}
+      </div>
+
+      <button id="equipo-submit-btn" onclick="submitEquipoAuth()" class="w-full rounded-xl py-3.5 font-bold text-white text-[15px] transition hover:opacity-90" style="background:#B5502E;">
+        ${esRegistro ? 'Crear cuenta' : 'Ingresar'}
+      </button>
+      <p class="text-center text-sm text-gray-500 mt-5">
+        ${esRegistro ? '¿Ya tenés cuenta?' : '¿Primera vez? Necesitás un código de invitación'}
+        <strong style="color:#B5502E; cursor:pointer;" onclick="toggleEquipoAuthModo()">${esRegistro ? 'Ingresá' : 'Registrate'}</strong>
+      </p>
+    </div>
+  `);
+}
+
+function mostrarErrorEquipo(msg){
+  const el = document.getElementById('equipo-error');
+  if(!el) return;
+  el.textContent = msg;
+  el.classList.remove('hidden');
+}
+
+async function recuperarContrasenaEquipo(){
+  const emailInput = document.getElementById('recuperar-email-equipo');
+  const email = emailInput ? emailInput.value.trim() : '';
+  const errorEl = document.getElementById('equipo-error');
+  const btn = document.getElementById('recuperar-equipo-submit-btn');
+  if(!email){
+    if(errorEl){ errorEl.classList.remove('hidden','bg-green-50','border-green-200','text-green-700'); errorEl.classList.add('bg-red-50','border','border-red-200','text-red-600'); errorEl.textContent = 'Ingresá tu email.'; }
+    return;
+  }
+
+  if(btn){ btn.disabled = true; btn.textContent = 'Enviando…'; }
+  try{
+    await auth.sendPasswordResetEmail(email);
+    if(errorEl){
+      errorEl.classList.remove('hidden','bg-red-50','border-red-200','text-red-600');
+      errorEl.classList.add('bg-green-50','border','border-green-200','text-green-700');
+      errorEl.textContent = `Te enviamos un email a ${email} con un link para elegir una contraseña nueva. Revisá también la carpeta de spam.`;
+    }
+    if(btn){ btn.textContent = 'Link enviado'; }
+  }catch(e){
+    if(errorEl){ errorEl.classList.remove('bg-green-50','border-green-200','text-green-700'); errorEl.classList.add('bg-red-50','border-red-200','text-red-600'); }
+    mostrarErrorEquipo(traducirErrorFirebase(e));
+    if(btn){ btn.disabled = false; btn.textContent = 'Enviar link de recuperación'; }
+  }
+}
+
+async function submitEquipoAuth(){
+  const pass = document.getElementById('equipo-pass').value || '';
+  const btn = document.getElementById('equipo-submit-btn');
+  if(!pass){ mostrarErrorEquipo('Ingresá tu contraseña.'); return; }
+
+  if(btn){ btn.disabled = true; btn.textContent = 'Un momento…'; }
+
+  try{
+    if(equipoAuthModo==='registro'){
+      const codigo = (document.getElementById('equipo-codigo').value || '').trim().toUpperCase();
+      if(!codigo){ mostrarErrorEquipo('Ingresá el código de invitación.'); if(btn){btn.disabled=false; btn.textContent='Crear cuenta';} return; }
+
+      const inviteSnap = await db.collection('invitacionesEquipo').doc(codigo).get();
+      if(!inviteSnap.exists){
+        mostrarErrorEquipo('Ese código no existe o ya venció. Pedile uno nuevo a la institución.');
+        if(btn){ btn.disabled=false; btn.textContent='Crear cuenta'; }
+        return;
+      }
+      const invite = inviteSnap.data();
+      const userCred = await auth.createUserWithEmailAndPassword(invite.email, pass);
+      await userCred.user.getIdToken();
+      await db.collection('usuarios').doc(userCred.user.uid).set({
+        email: invite.email, rol: 'staff', museoUid: invite.museoUid, miembroId: invite.miembroId, nombre: invite.nombre, creado: new Date().toISOString()
+      });
+      await entrarConSesionEquipo(userCred.user.uid, invite.museoUid, invite.miembroId, invite.nombre);
+    } else {
+      const email = (document.getElementById('equipo-email').value || '').trim();
+      if(!email){ mostrarErrorEquipo('Ingresá tu email.'); if(btn){btn.disabled=false; btn.textContent='Ingresar';} return; }
+      const userCred = await auth.signInWithEmailAndPassword(email, pass);
+      await userCred.user.getIdToken();
+      const udoc = await conReintentoDeAuth(() => db.collection('usuarios').doc(userCred.user.uid).get());
+      if(!udoc.exists || udoc.data().rol!=='staff'){
+        mostrarErrorEquipo('Esta cuenta no es de equipo. Si sos artista, museo o jurado, usá esas opciones en la portada.');
+        if(btn){ btn.disabled=false; btn.textContent='Ingresar'; }
+        return;
+      }
+      const d = udoc.data();
+      await entrarConSesionEquipo(userCred.user.uid, d.museoUid, d.miembroId, d.nombre);
+    }
+  }catch(e){
+    mostrarErrorEquipo(traducirErrorFirebase(e));
+    if(btn){ btn.disabled = false; btn.textContent = equipoAuthModo==='registro' ? 'Crear cuenta' : 'Ingresar'; }
+  }
+}
+
 function mostrarErrorJurado(msg){
   const el = document.getElementById('jurado-error');
   if(!el) return;
@@ -3546,6 +3780,43 @@ async function entrarConSesionJurado(uidJurado, museoUid, juradoId, nombre){
   showView('museo', 'curaduria');
   window.scrollTo(0,0);
   toast(`Ingresaste como jurado: ${nombre}`);
+}
+
+// Sesión real de un miembro de equipo (no jurado): carga los datos del museo
+// al que pertenece (con acceso completo de lectura/escritura, igual que la
+// Dirección) y después aplicarPermisos() restringe qué secciones ve/edita
+// según su rol, cada vez que navega (se llama automáticamente desde showView).
+async function entrarConSesionEquipo(uidStaff, museoUid, miembroId, nombre){
+  usuarioActualUid = uidStaff;
+  usuarioActualRol = 'staff';
+  staffMuseoUid = museoUid;
+  miStaffId = miembroId;
+
+  await cargarEstadoPrivado(museoUid, 'museo', '');
+
+  const member = equipoMuseo.find(m=>m.id===miembroId);
+  if(!member){
+    // Dirección lo sacó del equipo después de que se registró: no lo dejamos entrar.
+    try{ await auth.signOut(); }catch(e){}
+    usuarioActualUid = null; usuarioActualRol = null; staffMuseoUid = null; miStaffId = null; datosPrivadosCargados = false;
+    mostrarErrorEquipo('Tu acceso a este museo fue revocado. Consultá con la Dirección.');
+    toast('Tu acceso a este museo fue revocado','err');
+    return;
+  }
+
+  closeModal();
+  document.getElementById('landing-root').classList.add('hidden');
+  document.getElementById('museo-app').classList.remove('hidden');
+  const agname = document.getElementById('museo-agname');
+  if(agname) agname.textContent = (museoPerfil && museoPerfil.nombre ? museoPerfil.nombre : 'Museo') + ' · ' + (member ? member.rol : nombre);
+
+  const primeraSeccion = member && member.permisos && member.permisos.length ? (member.permisos.includes('dashboard') ? 'dashboard' : member.permisos[0]) : 'dashboard';
+  showView('museo', primeraSeccion);
+  if(!autosaveIntervalId){
+    autosaveIntervalId = setInterval(guardarEstado, 4000);
+  }
+  window.scrollTo(0,0);
+  toast(`Ingresaste como ${nombre}${member ? ' ('+member.rol+')' : ''}`);
 }
 
 
@@ -5548,7 +5819,7 @@ async function renderValorarConectarte(app){
 
   let existente = null;
   try{
-    const snap = await db.collection('testimonios').doc(usuarioActualUid).get();
+    const snap = await db.collection('testimonios').doc(app==='museo' ? museoUidActivo() : usuarioActualUid).get();
     if(snap.exists) existente = snap.data();
   }catch(e){
     console.error('No se pudo cargar tu testimonio:', e);
@@ -5596,7 +5867,7 @@ async function guardarTestimonio(app){
   }
 
   try{
-    await conReintentoDeAuth(() => db.collection('testimonios').doc(usuarioActualUid).set({
+    await conReintentoDeAuth(() => db.collection('testimonios').doc(app==='museo' ? museoUidActivo() : usuarioActualUid).set({
       nombre, rol: app, cargo, estrellas: valorarEstrellasActual, texto, fotoUrl, fecha: new Date().toISOString()
     }));
     toast('¡Gracias por tu valoración!');
