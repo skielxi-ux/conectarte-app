@@ -708,15 +708,9 @@ let evaluacionesUnsub = null;
 function iniciarListenerEvaluaciones(museoUid){
   if(!museoUid || evaluacionesListenerUid===museoUid) return;
   evaluacionesListenerUid = museoUid;
-  let esPrimerSnapshot = true;
   evaluacionesUnsub = db.collection('usuarios').doc(museoUid).collection('evaluaciones').onSnapshot(qs=>{
-    if(!esPrimerSnapshot){
-      qs.docChanges().forEach(change=>{
-        if(change.type==='added') generarNotificacionMuseo(change.doc.data());
-      });
-    }
-    esPrimerSnapshot = false;
     evaluaciones = qs.docs.map(d=>d.data());
+    generarNotificacionesFaltantesMuseo();
     try{ renderCuraduriaTabla(); }catch(e){}
   }, err=>{
     console.error('No se pudo sincronizar las evaluaciones:', err);
@@ -2206,6 +2200,23 @@ function puntajePonderadoPostulante(postId, ronda){
   return sumaPesoJurado ? sumaPonderada/sumaPesoJurado : null;
 }
 
+// El "voto" de cada jurado se deriva de su propio puntaje ponderado en esa
+// evaluación: 6/10 o más cuenta como aprobación. La mayoría se calcula sobre
+// el total de jurados agregados al roster (no solo los que ya evaluaron) —
+// así, si sólo evaluó 1 de 3 jurados y aprobó, todavía falta mayoría.
+function votosAprobacionPostulante(postId, ronda){
+  const totalPeso = rubrica.reduce((s,r)=>s+Number(r.peso||0),0) || 100;
+  const evals = evaluaciones.filter(e=>e.postId===postId && e.ronda===ronda);
+  let aprobados = 0;
+  evals.forEach(ev=>{
+    let score = 0;
+    rubrica.forEach(r=>{ score += (Number(ev.puntajes[r.id])||0) * (Number(r.peso)/totalPeso); });
+    if(score >= 6) aprobados++;
+  });
+  const total = jurados.length;
+  return { aprobados, evaluados: evals.length, total, hayMayoria: total===0 ? true : aprobados > total/2 };
+}
+
 function renderCuraduriaTabla(){
   const wrap = document.getElementById('cur-tabla-wrap');
   if(!wrap) return;
@@ -2218,6 +2229,7 @@ function renderCuraduriaTabla(){
   const rows = evaluables.map(({p,idx})=>{
     const evalsRecibidas = evaluaciones.filter(e=>e.postId===p.id && e.ronda===curaduriaState.ronda).length;
     const puntaje = puntajePonderadoPostulante(p.id, curaduriaState.ronda);
+    const votos = votosAprobacionPostulante(p.id, curaduriaState.ronda);
     const decidido = p.estado==='Aceptada' || p.estado==='Rechazada';
     const estado = decidido ? p.estado : (evalsRecibidas===0 ? 'Sin evaluar' : evalsRecibidas<jurados.length ? 'En evaluación' : 'Evaluado');
     const pillClass = estado==='Evaluado' ? 'pill-sage' : estado==='En evaluación' ? 'pill-amber' : estado==='Aceptada' ? 'pill-sage' : estado==='Rechazada' ? 'pill-red' : '';
@@ -2228,10 +2240,13 @@ function renderCuraduriaTabla(){
         <td><strong>${nombreMostrado}</strong>${curaduriaState.modo==='ciega' ? `<div class="text-dim" style="font-size:11px;">Identidad oculta durante la evaluación</div>` : `<div class="text-dim" style="font-size:11.5px;">${escapeHtml(p.disciplina)}</div>`}</td>
         <td class="text-dim">${evalsRecibidas} / ${jurados.length} jurados</td>
         <td class="num">${puntaje===null ? '—' : puntaje.toFixed(2)+' / 10'}</td>
-        <td><span class="pill ${pillClass}">${estado}</span></td>
+        <td>
+          <span class="pill ${pillClass}">${estado}</span>
+          ${!decidido && jurados.length>0 ? `<div class="text-dim" style="font-size:11px; margin-top:4px;"><i class="fa-solid ${votos.hayMayoria?'fa-check text-sage':'fa-triangle-exclamation'}" style="${votos.hayMayoria?'color:var(--sage);':'color:#DC2626;'}"></i> Aprobado por ${votos.aprobados}/${votos.total}${votos.hayMayoria?' (mayoría alcanzada)':''}</div>` : ''}
+        </td>
         <td>
           <div class="row-actions">
-            <button class="btn btn-sm btn-solid" onclick="openEvaluarModal('${c.id}',${idx})"><i class="fa-solid fa-scale-balanced"></i> ${yaEvalueYo?'Editar mi evaluación':'Evaluar'}</button>
+            ${usuarioActualRol==='jurado' ? `<button class="btn btn-sm btn-solid" onclick="openEvaluarModal('${c.id}',${idx})"><i class="fa-solid fa-scale-balanced"></i> ${yaEvalueYo?'Editar mi evaluación':'Evaluar'}</button>` : ''}
             ${!decidido && puedeGestionarCuraduria() ? `
               <button class="btn btn-sm" style="color:var(--sage); border-color:var(--sage);" onclick="decidirPostulante('${c.id}',${idx},'aceptar')" title="Aceptar y notificar al artista"><i class="fa-solid fa-check"></i></button>
               <button class="btn btn-sm btn-danger" onclick="decidirPostulante('${c.id}',${idx},'rechazar')" title="Rechazar y notificar al artista"><i class="fa-solid fa-xmark"></i></button>
@@ -2300,12 +2315,36 @@ function decidirPostulante(convId, idx, decision){
   const p = c ? c.postulantes[idx] : null;
   if(!c || !p) return;
 
+  if(decision==='aceptar' && p.id && jurados.length>0){
+    const v = votosAprobacionPostulante(p.id, curaduriaState.ronda);
+    if(!v.hayMayoria){
+      mostrarModalMayoriaInsuficiente(v);
+      return;
+    }
+  }
+
   p.estado = decision==='aceptar' ? 'Aceptada' : 'Rechazada';
 
   toast(decision==='aceptar' ? 'Postulante aceptado' : 'Postulante rechazado');
   renderCuraduriaTabla();
   updateMuseoBadges();
   guardarEstado();
+}
+
+function mostrarModalMayoriaInsuficiente(v){
+  const necesarios = Math.floor(v.total/2) + 1;
+  openModal(`
+    <div class="w-full max-w-md bg-white rounded-3xl shadow-2xl p-8 relative" style="font-family:'Lato',sans-serif;">
+      <button class="absolute top-6 right-6 text-gray-400 hover:text-gray-700 transition" onclick="closeModal()" aria-label="Cerrar"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+      <div style="width:48px; height:48px; border-radius:50%; background:#FEF2F2; display:flex; align-items:center; justify-content:center; margin-bottom:16px;">
+        <i class="fa-solid fa-triangle-exclamation" style="color:#DC2626; font-size:20px;" aria-hidden="true"></i>
+      </div>
+      <h2 class="text-xl font-black text-gray-900 mb-2">No se puede aceptar todavía</h2>
+      <p class="text-sm text-gray-700 mb-3">Este candidato no alcanzó la aprobación de la mayoría de los jurados.</p>
+      <p class="text-sm text-gray-500 leading-relaxed">Aprobado (puntaje ≥ 6/10) por <strong>${v.aprobados} de ${v.total}</strong> jurados agregados${v.evaluados<v.total ? ` (todavía faltan ${v.total-v.evaluados} evaluación/es)` : ''}. Se necesitan <strong>${necesarios} o más</strong> para poder aceptar.</p>
+      <button class="w-full mt-6 rounded-xl py-3 font-bold text-white text-sm hover:opacity-90 transition" style="background:#B5502E;" onclick="closeModal()">Entendido</button>
+    </div>
+  `);
 }
 
 
@@ -2388,23 +2427,18 @@ function eliminarCriterio(id){
 }
 
 function openEvaluarModal(convId, idx){
+  if(usuarioActualRol!=='jurado'){ toast('Solo un jurado con su propia cuenta puede evaluar postulaciones','err'); return; }
   const c = convocatorias.find(x=>x.id===convId);
   const p = c ? c.postulantes[idx] : null;
   if(!c || !p || !p.id){ toast('Esta postulación es de antes del sistema de evaluación con cuentas propias y no se puede evaluar','err'); return; }
   const nombreMostrado = curaduriaState.modo==='ciega' ? `Postulante anónimo #${idx+1}` : escapeHtml(p.nombre);
 
-  const esJuradoReal = usuarioActualRol==='jurado';
-  const miJurado = esJuradoReal ? jurados.find(j=>j.id===miJuradoId) : null;
-  const evalPrevia = esJuradoReal
-    ? evaluaciones.find(e=>e.postId===p.id && e.ronda===curaduriaState.ronda && e.juradoUid===usuarioActualUid)
-    : null;
+  const miJurado = jurados.find(j=>j.id===miJuradoId);
+  const evalPrevia = evaluaciones.find(e=>e.postId===p.id && e.ronda===curaduriaState.ronda && e.juradoUid===usuarioActualUid);
 
   const body = `
     ${curaduriaState.modo==='ciega' ? `<div class="text-dim" style="font-size:12.5px; margin-bottom:14px;"><i class="fa-solid fa-eye-slash" style="margin-right:6px;"></i>Evaluación a ciegas: la identidad del artista permanece oculta hasta cerrar la ronda.</div>` : ''}
-    ${esJuradoReal
-      ? `<p class="text-dim" style="font-size:12.5px; margin-bottom:14px;"><i class="fa-solid fa-user-check" style="margin-right:6px;"></i>Evaluando como <strong>${escapeHtml(miJurado?miJurado.nombre:'vos')}</strong></p>`
-      : tw_field('Evaluando como (jurado)', tw_input('ev-jurado', {tag:'select', optionsHtml: jurados.map(j=>`<option value="${j.id}">${escapeHtml(j.nombre)} (${j.tipo}, ×${j.peso})</option>`).join('')}))
-    }
+    <p class="text-dim" style="font-size:12.5px; margin-bottom:14px;"><i class="fa-solid fa-user-check" style="margin-right:6px;"></i>Evaluando como <strong>${escapeHtml(miJurado?miJurado.nombre:'vos')}</strong></p>
     <div class="grid grid-cols-2 gap-4">
       ${rubrica.map(r=>tw_field(`${escapeHtml(r.criterio)} (peso ${r.peso}%)`, tw_input('ev-crit-'+r.id, {type:'number', value: evalPrevia ? (evalPrevia.puntajes[r.id]??7) : '7', attrs:'min="0" max="10" step="0.5"'}))).join('')}
     </div>
@@ -2418,8 +2452,8 @@ function openEvaluarModal(convId, idx){
 }
 
 async function guardarEvaluacion(postId){
-  const esJuradoReal = usuarioActualRol==='jurado';
-  const juradoId = esJuradoReal ? miJuradoId : document.getElementById('ev-jurado').value;
+  if(usuarioActualRol!=='jurado'){ toast('Solo un jurado con su propia cuenta puede evaluar postulaciones','err'); return; }
+  const juradoId = miJuradoId;
   const jurado = jurados.find(j=>j.id===juradoId);
   const puntajes = {};
   rubrica.forEach(r=>{ puntajes[r.id] = Number(document.getElementById('ev-crit-'+r.id).value) || 0; });
@@ -4904,21 +4938,30 @@ function marcarTodasLeidasMuseo(){
   toast('Notificaciones marcadas como leídas');
 }
 
-// Se llama desde el listener en vivo de evaluaciones: cuando un jurado evalúa
-// una postulación que todavía no fue decidida, le avisamos a quien esté en la
-// cuenta del museo para que vaya a Curaduría y jurado a aceptar/rechazar.
-function generarNotificacionMuseo(ev){
-  if(usuarioActualRol!=='museo') return;
-  const c = convocatorias.find(x=>x.id===ev.convId);
-  const p = c ? c.postulantes.find(x=>x.id===ev.postId) : null;
-  if(!p || p.estado==='Aceptada' || p.estado==='Rechazada') return; // ya se decidió, no hace falta avisar
-  notificacionesMuseo.unshift({
-    id: uid('nm'), tipo:'evaluacion',
-    mensaje: `${ev.juradoNombre||'Un jurado'} ya evaluó la postulación de ${p.nombre} a "${c?c.titulo:''}". Ingresá a Curaduría y jurado para terminar de aceptar o rechazar al artista.`,
-    fecha: todayISO(), leida:false
+// Se llama cada vez que llegan (o se recargan) las evaluaciones: revisa TODAS
+// las evaluaciones actuales — no solo las que llegan en vivo — y genera una
+// notificación por cada una que sea sobre un postulante todavía no decidido y
+// que todavía no tenga aviso generado (lo identificamos por evalId para no
+// duplicar). Así, aunque Dirección no haya estado conectada en el momento
+// exacto en que el jurado evaluó, se entera la próxima vez que entra.
+function generarNotificacionesFaltantesMuseo(){
+  if(usuarioActualRol!=='museo' && usuarioActualRol!=='staff') return;
+  const yaNotificados = new Set(notificacionesMuseo.filter(n=>n.evalId).map(n=>n.evalId));
+  let huboNuevas = false;
+  evaluaciones.forEach(ev=>{
+    const evalId = `${ev.postId}_${ev.juradoId}_r${ev.ronda}`;
+    if(yaNotificados.has(evalId)) return;
+    const c = convocatorias.find(x=>x.id===ev.convId);
+    const p = c ? c.postulantes.find(x=>x.id===ev.postId) : null;
+    if(!p || p.estado==='Aceptada' || p.estado==='Rechazada') return; // ya se decidió, no hace falta avisar
+    notificacionesMuseo.unshift({
+      id: uid('nm'), tipo:'evaluacion', evalId,
+      mensaje: `${ev.juradoNombre||'Un jurado'} evaluó la postulación de ${p.nombre} a "${c?c.titulo:''}". Ingresá a Curaduría y jurado para revisarla.`,
+      fecha: todayISO(), leida:false
+    });
+    huboNuevas = true;
   });
-  updateMuseoBadges();
-  guardarEstado();
+  if(huboNuevas){ updateMuseoBadges(); guardarEstado(); }
 }
 
 function renderNotificaciones(){
