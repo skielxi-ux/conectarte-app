@@ -727,7 +727,7 @@ function iniciarListenerEvaluaciones(museoUid){
 function plantillaPrivadaVacia(role, email){
   const base = {
     misPostulaciones: [], notificacionesArtista: [], notificacionesMuseo: [],
-    museoPerfil: { nombre:'', ciudad:'', tipo:'Museo público', fundacion:'', bio:'', especialidades:[], email: email||'', sitio:'', instagram:'', direccion:'', telefono:'', whatsapp:'', fotos:[] },
+    museoPerfil: { nombre:'', ciudad:'', tipo:'Museo público', fundacion:'', bio:'', especialidades:[], email: email||'', sitio:'', instagram:'', direccion:'', telefono:'', whatsapp:'', logoUrl:null, fotos:[] },
     equipoMuseo: role==='museo' ? [
       {id:uid('m'), nombre:'Vos (titular de la cuenta)', email: email||'', rol:'Dirección', permisos:[...ROLE_DEFAULTS['Dirección']], titular:true}
     ] : [],
@@ -1668,10 +1668,7 @@ function openConvocatoriaModal(convId){
   const disciplinas = Object.keys(DISCIPLINE_FIELDS);
   const body = `
     ${tw_field('Título', tw_input('nc-titulo', {value: c?escapeHtml(c.titulo):'', placeholder:'Ej: Arte textil contemporáneo'}))}
-    <div class="grid grid-cols-2 gap-4">
-      ${tw_field('Disciplina', tw_input('nc-disciplina', {tag:'select', optionsHtml:disciplinas.map(d=>`<option ${c&&c.disciplina===d?'selected':''}>${d}</option>`).join(''), attrs:'onchange="renderDisciplinaFields()"'}))}
-      ${tw_field('Modalidad', tw_input('nc-modalidad', {tag:'select', optionsHtml:['Presencial','Virtual','Híbrida'].map(m=>`<option ${c&&c.modalidad===m?'selected':''}>${m}</option>`).join('')}))}
-    </div>
+    ${tw_field('Disciplina', tw_input('nc-disciplina', {tag:'select', optionsHtml:disciplinas.map(d=>`<option ${c&&c.disciplina===d?'selected':''}>${d}</option>`).join(''), attrs:'onchange="renderDisciplinaFields()"'}))}
     <div id="nc-dyn-fields" class="grid grid-cols-2 gap-4"></div>
     ${tw_field('Temática', tw_input('nc-tematica', {value: c?escapeHtml(c.tematica||''):'', placeholder:'Ej: identidad, memoria, naturaleza...'}))}
     ${tw_field('Fecha de cierre', tw_input('nc-cierre', {type:'date', value: c?c.cierre:addDays(todayISO(),30)}))}
@@ -1705,7 +1702,6 @@ function guardarConvocatoria(convId){
     titulo,
     institucion:museoPerfil.nombre,
     disciplina:document.getElementById('nc-disciplina').value,
-    modalidad:document.getElementById('nc-modalidad').value,
     tecnica:document.getElementById('nc-tecnica').value,
     dimensiones:document.getElementById('nc-dim').value,
     tematica:document.getElementById('nc-tematica').value.trim(),
@@ -2904,6 +2900,23 @@ function renderPerfilPublico(){
         <div class="field"><label>Nombre de la institución</label><input id="pf-nombre" value="${escapeHtml(museoPerfil.nombre)}"></div>
 
         <div class="field">
+          <label>Logo institucional</label>
+          <div style="display:flex; align-items:center; gap:12px; margin-bottom:8px;">
+            <div style="width:56px; height:56px; border-radius:50%; border:1px solid var(--line); overflow:hidden; flex-shrink:0; ${museoPerfil.logoUrl ? `background:url('${museoPerfil.logoUrl}') center/cover;` : 'background:var(--ink-3); display:flex; align-items:center; justify-content:center;'}">
+              ${museoPerfil.logoUrl ? '' : '<i class="fa-solid fa-landmark" style="color:var(--ink-dim);"></i>'}
+            </div>
+            <div>
+              <input id="pf-logo-input" type="file" accept="image/*" style="display:none;" onchange="subirLogoMuseo(this)">
+              <div style="display:flex; gap:8px;">
+                <button type="button" class="btn btn-sm" onclick="document.getElementById('pf-logo-input').click()"><i class="fa-solid fa-upload"></i> ${museoPerfil.logoUrl ? 'Cambiar logo' : 'Subir logo'}</button>
+                ${museoPerfil.logoUrl ? `<button type="button" class="btn btn-sm btn-danger" onclick="quitarLogoMuseo()"><i class="fa-solid fa-trash"></i> Quitar</button>` : ''}
+              </div>
+            </div>
+          </div>
+          <p class="text-dim" style="font-size:11px; margin:0;"><i class="fa-solid fa-circle-info"></i> Se usa en el directorio público y en tu valoración de conectARTE, en vez de un avatar genérico.</p>
+        </div>
+
+        <div class="field">
           <label>Foto de portada</label>
           <div style="border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; margin-bottom:8px; height:90px; ${museoPerfil.portada ? `background:url('${museoPerfil.portada}') center/cover;` : 'background:linear-gradient(135deg,#C1573A,#5B4636);'}"></div>
           <input id="pf-portada-input" type="file" accept="image/*" style="display:none;" onchange="subirPortadaMuseo(this)">
@@ -3023,6 +3036,32 @@ function quitarPortadaMuseo(){
   toast('Portada eliminada');
 }
 
+async function subirLogoMuseo(input){
+  const archivo = input.files[0];
+  if(!archivo) return;
+  if(!archivo.type.startsWith('image/')){ toast('Elegí un archivo de imagen','err'); return; }
+  try{
+    // El logo se ve chico (avatar circular), así que alcanza con una imagen
+    // pequeña — ocupa mucho menos espacio en el documento de Firestore.
+    museoPerfil.logoUrl = await comprimirImagen(archivo, 300, 0.82);
+    renderPerfilPublico();
+    guardarEstado();
+    sincronizarMuseoPublico();
+    toast('Logo actualizado');
+  }catch(e){
+    console.error('Error procesando el logo:', e);
+    toast('No se pudo procesar la imagen','err');
+  }
+}
+
+function quitarLogoMuseo(){
+  museoPerfil.logoUrl = null;
+  renderPerfilPublico();
+  guardarEstado();
+  sincronizarMuseoPublico();
+  toast('Logo eliminado');
+}
+
 function openAddFotoModal(){
   const body = `
     ${tw_field('Título de la foto', tw_input('af-titulo', {placeholder:'Ej: Sala principal'}))}
@@ -3136,6 +3175,7 @@ async function sincronizarMuseoPublico(){
       direccion: museoPerfil.direccion || '',
       telefono: museoPerfil.telefono || '',
       whatsapp: museoPerfil.whatsapp || '',
+      logoUrl: museoPerfil.logoUrl || null,
       portada: museoPerfil.portada || (museoPerfil.fotos && museoPerfil.fotos[0] ? museoPerfil.fotos[0].url : null),
       staff: (equipoMuseo||[]).map(m=>({nombre:m.nombre, cargo:m.rol})),
       actualizado: new Date().toISOString()
@@ -3916,12 +3956,11 @@ function renderArtistaDashboard(){
 /* =====================================================================
    ARTISTA — CONVOCATORIAS DISPONIBLES
    ===================================================================== */
-let disponiblesFiltro = { query:'', disciplina:'', modalidad:'', institucion:'' };
+let disponiblesFiltro = { query:'', disciplina:'', institucion:'' };
 
 function renderDisponibles(){
   const disponibles = convocatorias.filter(c=>c.estado==='Activa');
   const disciplinas = [...new Set(disponibles.map(c=>c.disciplina))].sort();
-  const modalidades = [...new Set(disponibles.map(c=>c.modalidad))].sort();
   const instituciones = [...new Set(disponibles.map(c=>c.institucion))].sort();
 
   document.getElementById('artista-view-disponibles').innerHTML = `
@@ -3947,13 +3986,6 @@ function renderDisponibles(){
             </select>
           </div>
           <div class="filter-field">
-            <label>Modalidad</label>
-            <select id="disp-modalidad" onchange="onDisponiblesFiltroChange()">
-              <option value="">Todas</option>
-              ${modalidades.map(m=>`<option value="${escapeHtml(m)}" ${disponiblesFiltro.modalidad===m?'selected':''}>${escapeHtml(m)}</option>`).join('')}
-            </select>
-          </div>
-          <div class="filter-field">
             <label>Institución</label>
             <select id="disp-institucion" onchange="onDisponiblesFiltroChange()">
               <option value="">Todas</option>
@@ -3973,12 +4005,11 @@ function renderDisponibles(){
 function onDisponiblesFiltroChange(){
   disponiblesFiltro.query = document.getElementById('disp-query').value;
   disponiblesFiltro.disciplina = document.getElementById('disp-disciplina').value;
-  disponiblesFiltro.modalidad = document.getElementById('disp-modalidad').value;
   disponiblesFiltro.institucion = document.getElementById('disp-institucion').value;
   renderDisponiblesTabla();
 }
 function resetDisponiblesFiltro(){
-  disponiblesFiltro = { query:'', disciplina:'', modalidad:'', institucion:'' };
+  disponiblesFiltro = { query:'', disciplina:'', institucion:'' };
   renderDisponibles();
 }
 
@@ -3990,7 +4021,6 @@ function renderDisponiblesTabla(){
     if(c.estado!=='Activa') return false;
     if(q && !c.titulo.toLowerCase().includes(q)) return false;
     if(disponiblesFiltro.disciplina && c.disciplina!==disponiblesFiltro.disciplina) return false;
-    if(disponiblesFiltro.modalidad && c.modalidad!==disponiblesFiltro.modalidad) return false;
     if(disponiblesFiltro.institucion && c.institucion!==disponiblesFiltro.institucion) return false;
     return true;
   });
@@ -3998,20 +4028,19 @@ function renderDisponiblesTabla(){
   wrap.innerHTML = `
     <div class="card">
       <table>
-        <thead><tr><th>Título</th><th>Institución</th><th>Disciplina</th><th>Modalidad</th><th>Cierre</th><th></th></tr></thead>
+        <thead><tr><th>Título</th><th>Institución</th><th>Disciplina</th><th>Cierre</th><th></th></tr></thead>
         <tbody>
           ${disponibles.length? disponibles.map(c=>`
             <tr>
               <td><strong>${escapeHtml(c.titulo)}</strong></td>
               <td class="text-dim">${escapeHtml(c.institucion)}</td>
               <td class="text-dim">${escapeHtml(c.disciplina)}</td>
-              <td class="text-dim">${escapeHtml(c.modalidad)}</td>
               <td class="${daysUntil(c.cierre)<=7?'text-red':''}">${fmtDate(c.cierre)}</td>
               <td>${misPostulaciones.some(p=>p.convId===c.id)
                 ? `<span class="pill pill-sage" title="Ya te postulaste a esta convocatoria"><i class="fa-solid fa-check"></i> Ya te postulaste</span>`
                 : `<button class="btn btn-sm btn-solid" onclick="openPostularModal('${c.id}')"><i class="fa-solid fa-paper-plane"></i> Postularme</button>`}</td>
             </tr>
-          `).join('') : `<tr><td colspan="6" class="empty-row">Ninguna convocatoria coincide con los filtros aplicados</td></tr>`}
+          `).join('') : `<tr><td colspan="5" class="empty-row">Ninguna convocatoria coincide con los filtros aplicados</td></tr>`}
         </tbody>
       </table>
       <p class="text-dim" style="font-size:12px; margin-top:12px;">${disponibles.length} convocatoria(s) encontradas</p>
@@ -5391,8 +5420,8 @@ async function renderInstitucionesLanding(){
     return `
       <div style="border:1px solid #ECEAE4; border-radius:10px; overflow:hidden; background:#fff; cursor:pointer;" onclick="verPerfilInstitucion('${inst.uid}')">
         <div style="height:110px; position:relative; ${institucionCoverStyle(inst)}">
-          <div style="position:absolute; top:10px; left:10px; width:30px; height:30px; border-radius:8px; background:rgba(20,20,20,0.55); backdrop-filter:blur(2px); display:flex; align-items:center; justify-content:center; color:#fff; font-size:13px;">
-            <i class="fa-solid fa-building-columns"></i>
+          <div style="position:absolute; top:10px; left:10px; width:30px; height:30px; border-radius:8px; background:rgba(20,20,20,0.55); backdrop-filter:blur(2px); display:flex; align-items:center; justify-content:center; color:#fff; font-size:13px; overflow:hidden;">
+            ${inst.logoUrl ? `<img src="${inst.logoUrl}" style="width:100%; height:100%; object-fit:cover;">` : '<i class="fa-solid fa-building-columns"></i>'}
           </div>
         </div>
         <div style="padding:16px;">
@@ -5903,7 +5932,7 @@ async function guardarTestimonio(app){
   if(app==='museo'){
     nombre = museoPerfil.nombre || 'Museo';
     cargo = 'Museo' + (museoPerfil.ciudad ? `, ${museoPerfil.ciudad}` : '');
-    fotoUrl = null;
+    fotoUrl = museoPerfil.logoUrl || null;
   } else {
     nombre = artistaPerfil.nombre || 'Artista';
     cargo = artistaPerfil.disciplinaPrincipal || 'Artista';
