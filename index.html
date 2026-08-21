@@ -210,10 +210,8 @@ button{font-family:inherit; cursor:pointer;}
         <div style="position:relative;">
           <button class="icon-btn" aria-label="Cuenta" onclick="toggleMenuCuenta(event)"><i class="fa-regular fa-user" aria-hidden="true"></i></button>
           <div id="menu-cuenta" class="hidden" style="position:absolute; top:calc(100% + 10px); right:0; background:#fff; border:1px solid #ECEAE4; border-radius:10px; box-shadow:0 12px 28px rgba(0,0,0,0.1); width:200px; overflow:hidden; z-index:50;">
-            <button onclick="closeMenuCuenta(); openLoginModal('museo')" class="w-full text-left px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-2.5"><i class="fa-solid fa-landmark text-gray-400 w-4"></i> Soy museo</button>
-            <button onclick="closeMenuCuenta(); openLoginModal('artista')" class="w-full text-left px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-2.5 border-t border-gray-100"><i class="fa-solid fa-palette text-gray-400 w-4"></i> Soy artista</button>
-            <button onclick="closeMenuCuenta(); openLoginModalJurado()" class="w-full text-left px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-2.5 border-t border-gray-100"><i class="fa-solid fa-gavel text-gray-400 w-4"></i> Soy jurado</button>
-            <button onclick="closeMenuCuenta(); openLoginModalEquipo()" class="w-full text-left px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-2.5 border-t border-gray-100"><i class="fa-solid fa-id-badge text-gray-400 w-4"></i> Soy miembro de equipo</button>
+            <button onclick="closeMenuCuenta(); openAccesoMuseos()" class="w-full text-left px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-2.5"><i class="fa-solid fa-landmark text-gray-400 w-4"></i> Acceso Museos</button>
+            <button onclick="closeMenuCuenta(); openLoginModal('artista')" class="w-full text-left px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-2.5 border-t border-gray-100"><i class="fa-solid fa-palette text-gray-400 w-4"></i> Acceso Artistas</button>
           </div>
         </div>
       </div>
@@ -228,8 +226,8 @@ button{font-family:inherit; cursor:pointer;}
         <p class="hero-byline" id="hero-byline">Claude Monet · 1872</p>
         <p class="hero-desc" id="hero-desc">La obra que le dio nombre al impresionismo. Capturando el puerto de Le Havre envuelto en la bruma matinal, Monet rompió de forma radical con los cánones académicos al priorizar la incidencia efímera de la luz por encima del detalle figurativo. A través de pinceladas rápidas y sueltas, el naranja encendido del sol naciente contrasta con los tonos azulados y grisáceos del agua y la neblina, congelando un instante fugaz e irrepetible de la atmósfera marina que transformó para siempre la historia del arte.</p>
         <div class="hero-actions">
-          <button class="btn-hero" onclick="openLoginModal('museo')"><i class="fa-solid fa-landmark" aria-hidden="true"></i> Soy museo o institución</button>
-          <button class="btn-hero outline" onclick="openLoginModal('artista')"><i class="fa-solid fa-palette" aria-hidden="true"></i> Soy artista</button>
+          <button class="btn-hero" onclick="openAccesoMuseos()"><i class="fa-solid fa-landmark" aria-hidden="true"></i> Acceso Museos</button>
+          <button class="btn-hero outline" onclick="openLoginModal('artista')"><i class="fa-solid fa-palette" aria-hidden="true"></i> Acceso Artistas</button>
         </div>
         <button onclick="openLoginModalJurado()" style="margin-top:18px; background:none; border:none; color:rgba(255,255,255,0.75); font-size:13.5px; text-decoration:underline; text-underline-offset:3px; cursor:pointer;">
           <i class="fa-solid fa-gavel" aria-hidden="true"></i> ¿Sos jurado de alguna convocatoria? Ingresá acá
@@ -336,7 +334,7 @@ button{font-family:inherit; cursor:pointer;}
           <h5 style="font-size:12px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:#9a9a92; margin:0 0 14px;">Secciones</h5>
           <ul style="list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:10px;">
             <li><a href="#instituciones" style="font-size:14.5px; color:#4a4a45;">Instituciones adheridas</a></li>
-            <li><a href="#" onclick="openLoginModal('museo'); return false;" style="font-size:14.5px; color:#4a4a45;">Ingresar como museo</a></li>
+            <li><a href="#" onclick="openAccesoMuseos(); return false;" style="font-size:14.5px; color:#4a4a45;">Ingresar como museo</a></li>
             <li><a href="#" onclick="openLoginModal('artista'); return false;" style="font-size:14.5px; color:#4a4a45;">Ingresar como artista</a></li>
           </ul>
         </div>
@@ -961,6 +959,47 @@ function closeModal(){ document.getElementById('modal-root').innerHTML=''; }
    ===================================================================== */
 let authModo = 'login'; // 'login' | 'registro'
 
+// Punto de entrada único para todo lo relacionado a museos: primero preguntamos
+// qué rol tiene la persona, y de ahí la mandamos al flujo correcto (Dirección
+// entra directo, Equipo y Jurado necesitan un código de invitación).
+function openAccesoMuseos(){
+  openModal(`
+    <div class="w-full max-w-md bg-white rounded-3xl shadow-2xl p-8 md:p-10 relative" style="font-family:'Lato',sans-serif;">
+      <button class="absolute top-6 right-6 text-gray-400 hover:text-gray-700 transition" onclick="closeModal()" aria-label="Cerrar"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+      <div class="flex gap-1.5 mb-6">
+        <div class="h-1.5 flex-1 rounded-full" style="background:#B5502E;"></div>
+        <div class="h-1.5 flex-1 rounded-full bg-gray-200"></div>
+      </div>
+      <p class="text-[11px] font-bold uppercase tracking-widest text-gray-500 mb-3">Acceso Museos</p>
+      <h2 class="text-[26px] leading-tight font-black text-gray-900 mb-2">¿Cuál es tu rol?</h2>
+      <p class="text-sm text-gray-500 mb-7">Elegí la opción que te corresponde para entrar con el paso correcto.</p>
+      <div class="flex flex-col gap-3">
+        <button onclick="openLoginModal('museo')" class="w-full text-left rounded-xl border border-gray-200 px-5 py-4 hover:border-[#B5502E] transition flex items-center gap-4" style="background:#fff;">
+          <i class="fa-solid fa-landmark text-xl" style="color:#B5502E; width:22px;" aria-hidden="true"></i>
+          <div>
+            <p class="font-bold text-gray-900 text-sm">Dirección</p>
+            <p class="text-xs text-gray-500 mt-0.5">Administrás la cuenta del museo: convocatorias, equipo, perfil público.</p>
+          </div>
+        </button>
+        <button onclick="openLoginModalEquipo()" class="w-full text-left rounded-xl border border-gray-200 px-5 py-4 hover:border-[#B5502E] transition flex items-center gap-4" style="background:#fff;">
+          <i class="fa-solid fa-id-badge text-xl" style="color:#B5502E; width:22px;" aria-hidden="true"></i>
+          <div>
+            <p class="font-bold text-gray-900 text-sm">Personal del equipo</p>
+            <p class="text-xs text-gray-500 mt-0.5">Curaduría, museografía, administración o comunicación — con código de invitación.</p>
+          </div>
+        </button>
+        <button onclick="openLoginModalJurado()" class="w-full text-left rounded-xl border border-gray-200 px-5 py-4 hover:border-[#B5502E] transition flex items-center gap-4" style="background:#fff;">
+          <i class="fa-solid fa-gavel text-xl" style="color:#B5502E; width:22px;" aria-hidden="true"></i>
+          <div>
+            <p class="font-bold text-gray-900 text-sm">Jurado</p>
+            <p class="text-xs text-gray-500 mt-0.5">Evaluás postulaciones de una convocatoria — con código de invitación.</p>
+          </div>
+        </button>
+      </div>
+    </div>
+  `);
+}
+
 function openLoginModal(role){
   authModo = 'login';
   renderLoginModal(role);
@@ -1025,6 +1064,7 @@ function renderLoginModal(role){
   openModal(`
     <div class="w-full max-w-md bg-white rounded-3xl shadow-2xl p-8 md:p-10 relative" style="font-family:'Lato',sans-serif;">
       <button class="absolute top-6 right-6 text-gray-400 hover:text-gray-700 transition" onclick="closeModal()" aria-label="Cerrar"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+      ${isMuseo ? `<button onclick="openAccesoMuseos()" style="background:none;border:none;color:#B5502E;font-size:12.5px;font-weight:700;cursor:pointer;padding:0;margin-bottom:14px;"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> Volver a elegir rol</button>` : ''}
 
       <div class="flex gap-1.5 mb-6">
         <div class="h-1.5 flex-1 rounded-full" style="background:#C1573A;"></div>
@@ -2095,7 +2135,7 @@ function renderCuraduria(){
           </tbody>
         </table>
         ${puedeGestionar?`<button class="btn btn-sm" style="margin-top:12px;" onclick="openJuradoModal()"><i class="fa-solid fa-plus"></i> Agregar jurado</button>
-        <p class="text-dim" style="font-size:11px; margin-top:8px;">Compartile a cada jurado su email y código: van a entrar desde "Soy jurado" en la portada y crear su propia cuenta.</p>` : ''}
+        <p class="text-dim" style="font-size:11px; margin-top:8px;">Compartile a cada jurado su email y código: van a entrar desde "Acceso Museos → Jurado" en la portada y crear su propia cuenta.</p>` : ''}
       </div>
 
       <div class="card">
@@ -3239,7 +3279,7 @@ function renderEquipo(){
           `).join('')}
         </tbody>
       </table>
-      <p class="text-dim" style="font-size:11.5px; margin-top:12px;"><i class="fa-solid fa-circle-info"></i> Generá un código y compartíselo a esa persona por fuera del sistema (email, WhatsApp): con ese código va a poder crear su propia cuenta desde "Soy miembro de equipo" en la portada, y va a ver solo las secciones que le diste acceso acá.</p>
+      <p class="text-dim" style="font-size:11.5px; margin-top:12px;"><i class="fa-solid fa-circle-info"></i> Generá un código y compartíselo a esa persona por fuera del sistema (email, WhatsApp): con ese código va a poder crear su propia cuenta desde "Acceso Museos → Personal del equipo" en la portada, y va a ver solo las secciones que le diste acceso acá.</p>
     </div>
   `;
 }
@@ -3442,6 +3482,7 @@ function renderJuradoAuthModal(){
     openModal(`
       <div class="w-full max-w-md bg-white rounded-3xl shadow-2xl p-8 md:p-10 relative" style="font-family:'Lato',sans-serif;">
         <button class="absolute top-6 right-6 text-gray-400 hover:text-gray-700 transition" onclick="closeModal()" aria-label="Cerrar"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+        <button onclick="openAccesoMuseos()" style="background:none;border:none;color:#B5502E;font-size:12.5px;font-weight:700;cursor:pointer;padding:0;margin-bottom:14px;"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> Volver a elegir rol</button>
         <div class="flex gap-1.5 mb-6">
           <div class="h-1.5 flex-1 rounded-full" style="background:#C1573A;"></div>
           <div class="h-1.5 flex-1 rounded-full bg-gray-200"></div>
@@ -3472,6 +3513,7 @@ function renderJuradoAuthModal(){
   openModal(`
     <div class="w-full max-w-md bg-white rounded-3xl shadow-2xl p-8 md:p-10 relative" style="font-family:'Lato',sans-serif;">
       <button class="absolute top-6 right-6 text-gray-400 hover:text-gray-700 transition" onclick="closeModal()" aria-label="Cerrar"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+      <button onclick="openAccesoMuseos()" style="background:none;border:none;color:#B5502E;font-size:12.5px;font-weight:700;cursor:pointer;padding:0;margin-bottom:14px;"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> Volver a elegir rol</button>
       <div class="flex gap-1.5 mb-6">
         <div class="h-1.5 flex-1 rounded-full" style="background:#C1573A;"></div>
         <div class="h-1.5 flex-1 rounded-full bg-gray-200"></div>
@@ -3537,6 +3579,7 @@ function renderEquipoAuthModal(){
     openModal(`
       <div class="w-full max-w-md bg-white rounded-3xl shadow-2xl p-8 md:p-10 relative" style="font-family:'Lato',sans-serif;">
         <button class="absolute top-6 right-6 text-gray-400 hover:text-gray-700 transition" onclick="closeModal()" aria-label="Cerrar"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+        <button onclick="openAccesoMuseos()" style="background:none;border:none;color:#B5502E;font-size:12.5px;font-weight:700;cursor:pointer;padding:0;margin-bottom:14px;"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> Volver a elegir rol</button>
         <div class="flex gap-1.5 mb-6">
           <div class="h-1.5 flex-1 rounded-full" style="background:#B5502E;"></div>
           <div class="h-1.5 flex-1 rounded-full bg-gray-200"></div>
@@ -3567,6 +3610,7 @@ function renderEquipoAuthModal(){
   openModal(`
     <div class="w-full max-w-md bg-white rounded-3xl shadow-2xl p-8 md:p-10 relative" style="font-family:'Lato',sans-serif;">
       <button class="absolute top-6 right-6 text-gray-400 hover:text-gray-700 transition" onclick="closeModal()" aria-label="Cerrar"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+      <button onclick="openAccesoMuseos()" style="background:none;border:none;color:#B5502E;font-size:12.5px;font-weight:700;cursor:pointer;padding:0;margin-bottom:14px;"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> Volver a elegir rol</button>
       <div class="flex gap-1.5 mb-6">
         <div class="h-1.5 flex-1 rounded-full" style="background:#B5502E;"></div>
         <div class="h-1.5 flex-1 rounded-full bg-gray-200"></div>
